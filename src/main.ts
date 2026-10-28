@@ -5,6 +5,8 @@ import { LayerAwareDxfLoader } from './dxf-loader';
 
 import { layout } from './layout';
 import { CadTools } from './cad-tools';
+import { drawingRegions, preferredRegion, type DrawingRegion } from './drawing-view';
+import { shapesFromDocument } from './geometry';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = layout;
 
@@ -16,6 +18,27 @@ let currentName = '';
 let tools: CadTools | undefined;
 const sessionLayers = new Map<string, { name: string; color: string; isVisible: boolean }>();
 let activeLayer = 'MX_TRAZOS';
+let regions: DrawingRegion[] = [];
+let regionIndex = 0;
+let zoomReferenceScale: number | undefined;
+function fitDrawing() {
+  const region = regions[regionIndex];
+  if (!region) { zoomReferenceScale=undefined;viewer.fit('extents');zoomReferenceScale=viewer.renderer.getViewState().scale;el('zoom-label').textContent='100%';el('coordinates').textContent='ZOOM 100%  •  LOCAL';return; }
+  const width = Math.max(region.maxX-region.minX, 1e-6), height = Math.max(region.maxY-region.minY, 1e-6);
+  const span = Math.max(width,height,1);
+  const scale = Math.min(viewer.canvas.clientWidth / Math.max(width,span*.02), viewer.canvas.clientHeight / Math.max(height,span*.02)) * .82;
+  zoomReferenceScale=scale;
+  viewer.renderer.setViewState({ centerX: (region.minX+region.maxX)/2, centerY: (region.minY+region.maxY)/2, scale });
+}
+function prepareRegions() {
+  zoomReferenceScale=undefined;
+  const doc = viewer.getDocument(); regions = doc?.format === 'dwg' ? drawingRegions(shapesFromDocument(doc)) : []; regionIndex = doc ? preferredRegion(doc,regions) : 0;
+  const select = el<HTMLSelectElement>('drawing-region');select.replaceChildren();
+  regions.forEach((region,i)=>{const option=document.createElement('option');option.value=String(i);option.textContent=`Zona ${i+1} · ${region.count.toLocaleString('es-PE')} objetos`;select.append(option);});
+  const all=document.createElement('option');all.value='-1';all.textContent='Todas las zonas';select.append(all);
+  select.value=String(regions.length?regionIndex:-1);select.hidden=regions.length<2;
+  if(regions.length)fitDrawing();
+}
 function layersForView() {
   const layers = new Map(Object.values(documentModel?.layers ?? {}).map(layer => [layer.name, layer]));
   for (const [name, layer] of sessionLayers) layers.set(name, layer);
@@ -26,11 +49,11 @@ const viewer = new CadViewer({
   wasmPath: new URL('wasm/', document.baseURI).href,
   workerUrl: new URL('wasm/dwg-worker.js', document.baseURI).href,
   workerTimeoutMs: 120000,
-  renderer: 'auto',
+  renderer: 'canvas2d',
   loaders: [new LayerAwareDxfLoader()],
   canvasOptions: { background: '#111d31', foreground: '#e4ebf3', contrastMode: 'adaptive', showUnsupportedMarkers: true },
   onLoadProgress(progress) { el('progress-text').textContent = `Abriendo plano… ${progress.percent ?? ''}${progress.percent != null ? '%' : ''}`; },
-  onViewChange(event) { const zoom = Math.round(event.zoomPercent); el('coordinates').textContent = `ZOOM ${zoom}%  •  LOCAL`; el('zoom-label').textContent = `${zoom}%`; tools?.redraw(); }
+  onViewChange(event) { const zoom = Math.round(zoomReferenceScale ? event.view.scale / zoomReferenceScale * 100 : event.zoomPercent); el('coordinates').textContent = `ZOOM ${zoom}%  •  LOCAL`; el('zoom-label').textContent = `${zoom}%`; tools?.redraw(); }
 });
 
 function controls() {
@@ -59,6 +82,15 @@ function updateProperties(file?: File) {
   if (!counts.size) { const p = document.createElement('p'); p.className = 'small-note'; p.textContent = 'Carga un plano para consultar su contenido.'; host.append(p); }
 }
 function notice(message: string, error = false) { const n = el('notice'); n.textContent = message; n.classList.toggle('error', error); n.hidden = false; }
+function showDrawingWarnings(warnings: string[]) {
+  const missing=viewer.getMissingReferences();
+  const messages=[...new Set(warnings)].filter(message=>!(/shx/i.test(message)&&!missing.length));
+  const host=el('drawing-warning-list');host.replaceChildren();
+  if(missing.length){const p=document.createElement('p');p.textContent=`Faltan símbolos SHX: ${missing.map(r=>r.fileName).join(', ')}. Se usan trazos alternativos; esto no impide visualizar la geometría.`;host.append(p);}
+  for(const message of messages.filter(m=>!/shx/i.test(m))){const p=document.createElement('p');p.textContent=message;host.append(p);}
+  el('drawing-warnings').hidden=!host.children.length;
+  el('warning-count').textContent=String(host.children.length);
+}
 el('notice').onclick = () => { el('notice').hidden = true; };
 function renderLayers() {
   const host = el('layers'); host.replaceChildren();
@@ -111,14 +143,14 @@ async function open(file: File) {
     sessionLayers.clear(); activeLayer = 'MX_TRAZOS'; el('layer-error').hidden = true;
     documentModel = viewer.renderer.getSourceDocument(); active = true; currentName = file.name;
     tools?.reset();
+    prepareRegions();
     el('empty').hidden = true;
     el('filename').textContent = file.name; el('tab').textContent = file.name;
     el('filemeta').textContent = `${result.format.toUpperCase()} · ${(file.size / 1024).toLocaleString('es-PE', { maximumFractionDigits: 1 })} KB`;
     el<HTMLInputElement>('search').value = ''; renderLayers(); updateProperties(file);
     el('status').textContent = `${documentModel?.entities.length.toLocaleString('es-PE') ?? 0} entidades · ${el('layer-count').textContent} capas · ${(result.elapsedMs / 1000).toFixed(2)} s`;
-    const warnings = [...new Set([...result.warnings, ...viewer.getMissingReferences().map(r => `Referencia ausente: ${r.fileName}`)])];
+    showDrawingWarnings(result.warnings);
     if (!documentModel?.entities.length) notice('El archivo se abrió, pero no contiene geometría 2D visible compatible.');
-    else if (warnings.length) notice(`Vista posiblemente parcial · ${warnings.length} aviso(s): ${warnings.slice(0, 3).join(' · ')}. Haz clic para cerrar.`);
   } catch (error) {
     const cancelled = controller.signal.aborted;
     notice(cancelled ? 'Apertura cancelada.' : `No se pudo leer el plano. Puede estar dañado o utilizar una versión no compatible. ${error instanceof Error ? error.message : ''}`, !cancelled);
@@ -129,7 +161,8 @@ const selectFile = () => { if (!controller) input.click(); };
 el('open').onclick = selectFile; el('open-empty').onclick = selectFile;
 input.onchange = () => { const file = input.files?.[0]; input.value = ''; if (file) void open(file); };
 el('cancel').onclick = () => controller?.abort();
-el('plus').onclick = () => viewer.zoomIn(); el('minus').onclick = () => viewer.zoomOut(); el('fit').onclick = () => viewer.fit();
+el('plus').onclick = () => viewer.zoomIn(); el('minus').onclick = () => viewer.zoomOut(); el('fit').onclick = () => fitDrawing();
+el('drawing-region').onchange = () => { regionIndex=Number(el<HTMLSelectElement>('drawing-region').value);fitDrawing(); };
 el('search').oninput = renderLayers;
 el('active-layer').onchange = () => { activeLayer = el<HTMLSelectElement>('active-layer').value; renderLayers(); };
 el('new-layer-form').onsubmit = e => {
@@ -142,9 +175,11 @@ el('new-layer-form').onsubmit = e => {
 };
 el('clear').onclick = () => {
   if (controller) return;
-  viewer.clear(); active = false; documentModel = undefined; currentName = '';
+  zoomReferenceScale=undefined;viewer.clear(); active = false; documentModel = undefined; currentName = '';
   sessionLayers.clear(); activeLayer = 'MX_TRAZOS'; el('layer-error').hidden = true;
   tools?.reset();
+  regions=[];regionIndex=0;el('drawing-region').hidden=true;
+  el('drawing-warnings').hidden=true;
   el('empty').hidden = false; el('notice').hidden = true;
   el('filename').textContent = 'Ningún archivo abierto'; el('filemeta').textContent = 'Formatos DWG y DXF'; el('tab').textContent = 'Visor de planos';
   el('status').textContent = 'Listo para abrir un plano'; el('coordinates').textContent = 'MX CAD · LOCAL';
@@ -163,6 +198,13 @@ function setBackground(light: boolean) {
 }
 el('background-dark').onclick = () => setBackground(false);
 el('background-light').onclick = () => setBackground(true);
+el('load-shx').onclick=()=>el<HTMLInputElement>('shx-input').click();
+el<HTMLInputElement>('shx-input').onchange=async e=>{
+  const input=e.target as HTMLInputElement;
+  try{for(const file of input.files??[])await viewer.addReferenceFile(file);showDrawingWarnings(viewer.getLoadResult()?.warnings??[]);tools?.refresh();}
+  catch(error){notice(`No se pudo cargar la referencia SHX: ${error instanceof Error?error.message:String(error)}`,true);}
+  finally{input.value='';}
+};
 el('export').onclick = async () => {
   try {
     const canvas = await tools!.composite(await viewer.captureCanvas());
@@ -178,7 +220,7 @@ viewport.addEventListener('dragleave', e => { if (!viewport.contains(e.relatedTa
 viewport.addEventListener('drop', e => { e.preventDefault(); viewport.classList.remove('dragging'); const file = e.dataTransfer?.files[0]; if (file) void open(file); });
 window.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); selectFile(); }
-  else if (!(e.target instanceof HTMLInputElement) && active && !controller && e.key.toLowerCase() === 'f') viewer.fit();
+  else if (!(e.target instanceof HTMLInputElement) && active && !controller && e.key.toLowerCase() === 'f') fitDrawing();
 });
 tools = new CadTools(viewer, {
   activeLayer: () => activeLayer,

@@ -23,3 +23,13 @@ Las longitudes XY, perímetros y áreas se calculan sobre la proyección superio
 La selección cubre puntos, líneas, polilíneas, círculos y arcos, incluidas entidades dentro de bloques simples. Las curvas se aproximan por segmentos para selección y cálculo; el panel identifica esas medidas como aproximadas. No se seleccionan textos, sombreados, splines ni entidades no compatibles. La visibilidad de capas se respeta.
 
 Los archivos originales DWG/DXF no se modifican. Los trazos no se guardan automáticamente al cerrar la página. El DXF de trazos usa las coordenadas numéricas de la sesión; al importarlo en otro programa, utiliza las mismas unidades del plano de origen. Las mediciones se exportan como segmentos y los polígonos como polilíneas 3D cerradas.
+
+## Encuadre y referencias de DWG
+
+Al abrir un DWG, el visor ajusta la geometría visible de la zona asociada a la vista guardada, considerando su punto TARGET. Se evita reutilizar un zoom microscópico o encuadrar el espacio vacío entre detalles locales y topografía lejana. Las entidades y sus coordenadas no cambian.
+
+Se utiliza el renderizado Canvas 2D compatible para conservar detalles pequeños en dibujos que mezclan coordenadas locales y topográficas muy alejadas, evitando la pérdida de precisión observada en los buffers WebGL. La lectura DWG continúa ejecutándose con LibreDWG WebAssembly.
+
+Si el dibujo contiene grupos muy separados, el selector **Zona** de la barra del visor permite recorrerlos. **Todas las zonas** muestra la extensión completa; **Ajustar** y la tecla F vuelven a encuadrar la zona elegida.
+
+Las referencias SHX ausentes se indican en **Avisos del dibujo**, dentro de Propiedades, sin cubrir el plano. Los símbolos complejos de tipos de línea se sustituyen por trazos alternativos hasta cargar el archivo SHX correspondiente con **Cargar referencia SHX**. Este aviso no significa que el DWG esté vacío o dañado.
