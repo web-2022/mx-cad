@@ -4,6 +4,7 @@ import './style.css';
 import { LayerAwareDxfLoader } from './dxf-loader';
 
 import { layout } from './layout';
+import { CadTools } from './cad-tools';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = layout;
 
@@ -12,6 +13,7 @@ let active = false;
 let controller: AbortController | undefined;
 let documentModel: CadDocument | undefined;
 let currentName = '';
+let tools: CadTools | undefined;
 const viewer = new CadViewer({
   container: el('viewer'),
   wasmPath: new URL('wasm/', document.baseURI).href,
@@ -21,10 +23,12 @@ const viewer = new CadViewer({
   loaders: [new LayerAwareDxfLoader()],
   canvasOptions: { background: '#111d31', foreground: '#e4ebf3', contrastMode: 'adaptive', showUnsupportedMarkers: true },
   onLoadProgress(progress) { el('progress-text').textContent = `Abriendo plano… ${progress.percent ?? ''}${progress.percent != null ? '%' : ''}`; },
-  onViewChange(event) { const zoom = Math.round(event.zoomPercent); el('coordinates').textContent = `ZOOM ${zoom}%  •  LOCAL`; el('zoom-label').textContent = `${zoom}%`; }
+  onViewChange(event) { const zoom = Math.round(event.zoomPercent); el('coordinates').textContent = `ZOOM ${zoom}%  •  LOCAL`; el('zoom-label').textContent = `${zoom}%`; tools?.redraw(); }
 });
 
 function controls() {
+  (document.querySelector('.cad-dock') as HTMLElement | null)?.toggleAttribute('inert', !!controller);
+  document.querySelector<HTMLElement>('.sidebar')!.inert = !!controller;
   document.querySelectorAll<HTMLButtonElement>('[data-drawing]').forEach(b => b.disabled = !active || !!controller);
   el<HTMLButtonElement>('clear').disabled = !!controller;
   el<HTMLButtonElement>('open').disabled = !!controller;
@@ -73,6 +77,7 @@ function renderLayers() {
       const state = viewer.renderer.getViewState();
       viewer.renderer.setDocument(documentModel);
       viewer.renderer.setViewState(state);
+      tools?.refresh();
     };
     row.append(check, swatch, name); host.append(row);
   }
@@ -88,6 +93,7 @@ async function open(file: File) {
   try {
     const result = await viewer.loadFile(file, { signal: controller.signal });
     documentModel = viewer.renderer.getSourceDocument(); active = true; currentName = file.name;
+    tools?.reset();
     el('empty').hidden = true;
     el('filename').textContent = file.name; el('tab').textContent = file.name;
     el('filemeta').textContent = `${result.format.toUpperCase()} · ${(file.size / 1024).toLocaleString('es-PE', { maximumFractionDigits: 1 })} KB`;
@@ -111,6 +117,7 @@ el('search').oninput = renderLayers;
 el('clear').onclick = () => {
   if (controller) return;
   viewer.clear(); active = false; documentModel = undefined; currentName = '';
+  tools?.reset();
   el('empty').hidden = false; el('notice').hidden = true;
   el('filename').textContent = 'Ningún archivo abierto'; el('filemeta').textContent = 'Formatos DWG y DXF'; el('tab').textContent = 'Visor de planos';
   el('status').textContent = 'Listo para abrir un plano'; el('coordinates').textContent = 'MX CAD · LOCAL';
@@ -131,7 +138,7 @@ el('background-dark').onclick = () => setBackground(false);
 el('background-light').onclick = () => setBackground(true);
 el('export').onclick = async () => {
   try {
-    const canvas = await viewer.captureCanvas();
+    const canvas = await tools!.composite(await viewer.captureCanvas());
     const link = document.createElement('a'); link.href = canvas.toDataURL('image/png'); link.download = currentName.replace(/\.(dwg|dxf)$/i, '') + '.png'; document.body.append(link); link.click(); link.remove();
   } catch (error) { notice(`No se pudo exportar la vista: ${String(error)}`, true); }
 };
@@ -146,4 +153,5 @@ window.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); selectFile(); }
   else if (!(e.target instanceof HTMLInputElement) && active && !controller && e.key.toLowerCase() === 'f') viewer.fit();
 });
+tools = new CadTools(viewer);
 window.addEventListener('beforeunload', () => viewer.destroy()); controls();

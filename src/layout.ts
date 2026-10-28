@@ -1,7 +1,7 @@
 export const layout = `
 <main class="shell">
   <header class="topbar">
-    <div class="brand"><div class="mark">MX</div><div><h1>MX CAD</h1><p>Plataforma de visualización de planos</p><small>DWG · DXF</small></div></div>
+    <div class="brand"><div class="brand-logo-wrap"><img src="${new URL('assets/mx-logo.png', document.baseURI).href}" alt="MX Mining Expert" class="brand-logo-img"></div><div><h1>MX CAD</h1><p>Mine Design &amp; Planning Platform</p><small>BY MINING EXPERT</small></div></div>
     <div class="header-tools"><button id="clear" title="Cerrar el plano actual">＋ Nuevo</button><button class="primary" id="open">↥ Abrir plano</button><button id="export" data-drawing title="Guardar la vista como imagen PNG">↓ Exportar PNG</button><span class="tool-divider"></span><button id="panel-toggle" aria-pressed="false">◧ Paneles</button><details class="general"><summary>General ▾</summary><div><span>FONDO DEL VISOR</span><button id="background-dark" aria-pressed="true">Oscuro</button><button id="background-light" aria-pressed="false">Blanco</button></div></details></div>
     <span class="local">● Procesamiento local</span>
   </header>
@@ -16,7 +16,7 @@ export const layout = `
       <div class="viewport" id="viewport"><div class="viewer" id="viewer"></div><div class="viewport-label"><span class="view-dot"></span> SUPERIOR <span class="view-divider">|</span> 2D</div>
         <div class="empty" id="empty"><div><div class="empty-icon">⌑</div><span class="eyebrow">ESPACIO DE DIBUJO</span><h2>Tu próximo plano<br>empieza aquí.</h2><p>Explora tus archivos DWG y DXF.<br>Visualiza la geometría y controla cada capa.</p><div class="empty-actions"><button class="primary" id="open-empty">↥ Abrir un plano</button><button class="demo" id="demo">Ver ejemplo ↗</button></div><div class="formats">ARRASTRA TU ARCHIVO AQUÍ &nbsp; · &nbsp; DWG / DXF</div></div></div>
         <div id="notice" class="notice" role="alert" hidden></div><div id="busy" class="busy" hidden><div><div id="progress-text" role="status">Abriendo plano…</div><progress></progress><button id="cancel">Cancelar</button></div></div><div class="axis"><span class="axis-y">Y</span><span class="axis-corner"></span><span class="axis-x">X</span><small>WCS</small></div><div class="hint">Rueda: zoom &nbsp; · &nbsp; Arrastrar: desplazar</div>
-      </div><div class="viewer-bottom"><span>● Solo lectura</span><span>F: ajustar &nbsp; · &nbsp; Ctrl + O: abrir</span></div>
+      </div><div class="viewer-bottom"><span>● Plano original protegido · Trazos de sesión</span><span>Enter: cerrar · Esc: cancelar</span></div>
     </section>
     <aside class="properties panel"><div class="section-head"><h2>◈ Propiedades</h2><span class="badge">PLANO</span></div><div class="panel-content"><div class="property-heading">INFORMACIÓN GENERAL</div><dl><div><dt>Formato</dt><dd id="prop-format">—</dd></div><div><dt>Tamaño</dt><dd id="prop-size">—</dd></div><div><dt>Unidades</dt><dd id="prop-units">—</dd></div><div><dt>Visualización</dt><dd>Superior / 2D</dd></div><div><dt>Modo</dt><dd>Solo lectura</dd></div></dl><div class="property-heading">TIPOS DE ENTIDAD</div><div id="entity-types" class="entity-types"><p class="small-note">Carga un plano para consultar su contenido.</p></div><div class="privacy-note"><span>◇</span><div><strong>Tus archivos, en tu equipo</strong><p>Los planos se procesan localmente y no se suben a un servidor.</p></div></div><div class="compat-note">La vista puede ser parcial si el plano incluye objetos o referencias no compatibles.</div></div></aside>
   </div>
