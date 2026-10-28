@@ -34,7 +34,7 @@ el('notice').onclick = () => { el('notice').hidden = true; };
 function renderLayers() {
   const host = el('layers'); host.replaceChildren();
   const query = el<HTMLInputElement>('search').value.toLocaleLowerCase();
-  const layers = Object.entries(documentModel?.layers ?? {});
+  const layers = [...new Map(Object.entries(documentModel?.layers ?? {}).map(entry => [entry[1].name, entry])).values()];
   el('layer-count').textContent = String(layers.length);
   for (const [key, layer] of layers) {
     if (!layer.name.toLocaleLowerCase().includes(query)) continue;
@@ -46,8 +46,12 @@ function renderLayers() {
     const name = document.createElement('span'); name.textContent = layer.name; name.title = layer.name;
     check.onchange = () => {
       if (!documentModel) return;
-      documentModel.layers[key].isVisible = check.checked;
-      documentModel.layers[key].isFrozen = false;
+      for (const candidate of Object.values(documentModel.layers)) {
+        if (candidate.name === documentModel.layers[key].name) {
+          candidate.isVisible = check.checked;
+          candidate.isFrozen = false;
+        }
+      }
       const state = viewer.renderer.getViewState();
       viewer.renderer.setDocument(documentModel);
       viewer.renderer.setViewState(state);
@@ -92,7 +96,7 @@ el('export').onclick = async () => {
     const link = document.createElement('a'); link.href = canvas.toDataURL('image/png'); link.download = currentName.replace(/\.(dwg|dxf)$/i, '') + '.png'; document.body.append(link); link.click(); link.remove();
   } catch (error) { notice(`No se pudo exportar la vista: ${String(error)}`, true); }
 };
-el('demo').onclick = async () => { try { const response = await fetch('/ejemplo.dxf'); if (!response.ok) throw new Error('Archivo de ejemplo no disponible'); await open(new File([await response.arrayBuffer()], 'ejemplo.dxf')); } catch (e) { notice(String(e), true); } };
+el('demo').onclick = async () => { try { const response = await fetch(new URL('ejemplo.dxf', document.baseURI)); if (!response.ok) throw new Error('Archivo de ejemplo no disponible'); await open(new File([await response.arrayBuffer()], 'ejemplo.dxf')); } catch (e) { notice(String(e), true); } };
 const viewport = el('viewport');
 window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => e.preventDefault());
