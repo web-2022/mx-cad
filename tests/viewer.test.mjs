@@ -11,11 +11,16 @@ test('DXF local: abrir, capas, zoom, PNG y archivo inválido', { timeout: 90000 
     page.setDefaultTimeout(15000);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await page.locator('#open-empty').waitFor();
+    await mkdir('test-results', { recursive: true });
+    await page.screenshot({ path: 'test-results/inicio-mx-cad.png' });
     assert.equal(await page.locator('#fit').isDisabled(), true);
     await page.locator('#file-input').setInputFiles('public/ejemplo.dxf');
     await page.locator('#empty').waitFor({ state: 'hidden' });
     assert.equal(await page.locator('#filename').textContent(), 'ejemplo.dxf');
     assert.ok(Number(await page.locator('#layer-count').textContent()) >= 4);
+    assert.equal(await page.locator('#prop-format').textContent(), 'DXF');
+    assert.equal(await page.locator('#stat-files').textContent(), '1');
+    assert.equal(await page.locator('#stat-entities').textContent(), '46');
     console.log('DXF y capas cargados');
     const layer = page.getByRole('checkbox', { name: 'Mostrar capa MUROS', exact: true });
     await layer.uncheck(); assert.equal(await layer.isChecked(), false); await layer.check();
@@ -23,6 +28,12 @@ test('DXF local: abrir, capas, zoom, PNG y archivo inválido', { timeout: 90000 
     assert.notEqual(await page.locator('#coordinates').textContent(), before);
     await page.locator('#search').fill('MUROS'); assert.equal(await page.locator('.layer').count(), 1);
     await page.locator('#search').fill('');
+    await page.locator('.general summary').click(); await page.locator('#background-light').click();
+    assert.equal(await page.locator('.shell').evaluate(n => n.classList.contains('light-view')), true);
+    await page.locator('.general summary').click(); await page.locator('#background-dark').click();
+    await page.locator('#panel-toggle').click(); assert.equal(await page.locator('.sidebar').isVisible(), false);
+    await page.locator('#panel-toggle').click(); assert.equal(await page.locator('.sidebar').isVisible(), true);
+    await page.locator('#fit').click();
     console.log('Capas y zoom verificados');
     await mkdir('test-results', { recursive: true });
     await unlink('test-results/ejemplo.png').catch(error => { if (error.code !== 'ENOENT') throw error; });
@@ -51,5 +62,12 @@ test('DXF local: abrir, capas, zoom, PNG y archivo inválido', { timeout: 90000 
       await page.screenshot({ path: 'test-results/dwg.png' });
     }
     assert.deepEqual(errors, []);
+    await page.locator('#clear').click();
+    assert.equal(await page.locator('#stat-files').textContent(), '0');
+    assert.equal(await page.locator('#prop-format').textContent(), '—');
+    assert.equal(await page.locator('#empty').isVisible(), true);
+    await page.setViewportSize({width:390,height:844});
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({path:'test-results/mx-cad-movil.png'});
   } finally { await app.close(); }
 });

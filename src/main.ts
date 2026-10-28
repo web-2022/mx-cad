@@ -3,13 +3,9 @@ import '@flyfish-dev/cad-viewer/style.css';
 import './style.css';
 import { LayerAwareDxfLoader } from './dxf-loader';
 
-document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
-<main class="shell">
- <header class="topbar"><div class="brand"><div class="mark">⌁</div><div><strong>MX CAD</strong><small>VISOR DE PLANOS</small></div></div><div class="top-actions"><span class="local">Procesamiento local</span><button class="primary" id="open">＋ Abrir plano</button></div></header>
- <div class="body"><aside class="sidebar"><div class="eyebrow">ARCHIVO ACTUAL</div><div class="file-card"><strong id="filename">Ningún archivo abierto</strong><small id="filemeta">Formatos DWG y DXF</small></div><div class="section-head"><span class="eyebrow">CAPAS DEL PLANO</span><span class="badge" id="layer-count">0</span></div><input id="search" class="search" placeholder="Buscar capa…" aria-label="Buscar capa"><div class="layers" id="layers"><p class="empty-layer">Las capas aparecerán al abrir un plano.</p></div><div class="sidebar-note">Tus planos permanecen en este equipo.<br>Vista 2D · Solo lectura<br><br>La visualización puede ser parcial si el plano contiene entidades o referencias no compatibles.</div></aside>
- <section class="workspace"><div class="toolbar"><div class="tab" id="tab">Espacio de trabajo</div><div class="tools"><button id="minus" data-drawing title="Alejar">−</button><button id="plus" data-drawing title="Acercar">＋</button><button id="fit" data-drawing title="Ajustar a pantalla (F)">⛶ Ajustar</button><button id="export" data-drawing title="Guardar la vista como imagen PNG">↓ PNG</button></div></div><div class="viewport" id="viewport"><div class="viewer" id="viewer"></div><div class="viewport-label">SUPERIOR / 2D</div><div class="empty" id="empty"><div><div class="empty-icon">⌑</div><h1>Tus planos, a la vista.</h1><p>Abre un archivo de AutoCAD para explorar su geometría y sus capas. También puedes arrastrarlo aquí.</p><button class="primary" id="open-empty">Abrir un plano</button><button class="demo" id="demo">Ver ejemplo ↗</button><div class="formats">.DWG &nbsp; / &nbsp; .DXF</div><div class="shortcuts">Ctrl + O para abrir · F para ajustar</div></div></div><div id="notice" class="notice" role="alert" hidden></div><div id="busy" class="busy" hidden><div><div id="progress-text" role="status">Abriendo plano…</div><progress></progress><button id="cancel">Cancelar</button></div></div><div class="axis"><b>X →</b> Y ↑</div><div class="hint">Rueda: zoom &nbsp; · &nbsp; Arrastrar: desplazar</div></div></section></div>
- <footer class="statusbar"><span id="status" role="status">Listo para abrir un plano</span><span id="coordinates">MX CAD &nbsp; • &nbsp; LOCAL</span></footer>
-</main><input type="file" id="file-input" accept=".dwg,.dxf" hidden>`;
+import { layout } from './layout';
+
+document.querySelector<HTMLDivElement>('#app')!.innerHTML = layout;
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 let active = false;
@@ -23,12 +19,34 @@ const viewer = new CadViewer({
   workerTimeoutMs: 120000,
   renderer: 'auto',
   loaders: [new LayerAwareDxfLoader()],
-  canvasOptions: { background: '#0b1018', foreground: '#e4ebf3', contrastMode: 'adaptive', showUnsupportedMarkers: true },
+  canvasOptions: { background: '#111d31', foreground: '#e4ebf3', contrastMode: 'adaptive', showUnsupportedMarkers: true },
   onLoadProgress(progress) { el('progress-text').textContent = `Abriendo plano… ${progress.percent ?? ''}${progress.percent != null ? '%' : ''}`; },
-  onViewChange(event) { el('coordinates').textContent = `ZOOM ${Math.round(event.zoomPercent)}%  •  LOCAL`; }
+  onViewChange(event) { const zoom = Math.round(event.zoomPercent); el('coordinates').textContent = `ZOOM ${zoom}%  •  LOCAL`; el('zoom-label').textContent = `${zoom}%`; }
 });
 
-function controls() { document.querySelectorAll<HTMLButtonElement>('[data-drawing]').forEach(b => b.disabled = !active || !!controller); }
+function controls() {
+  document.querySelectorAll<HTMLButtonElement>('[data-drawing]').forEach(b => b.disabled = !active || !!controller);
+  el<HTMLButtonElement>('clear').disabled = !!controller;
+  el<HTMLButtonElement>('open').disabled = !!controller;
+}
+function updateProperties(file?: File) {
+  const count = documentModel?.entities.length ?? 0;
+  const format = file ? file.name.split('.').pop()!.toUpperCase() : '—';
+  const layers = new Set(Object.values(documentModel?.layers ?? {}).map(layer => layer.name)).size;
+  for (const [id, value] of Object.entries({ 'file-count': active ? '1 archivo' : '0 archivos', 'stat-files': active ? '1' : '0', 'stat-layers': String(layers), 'stat-entities': count.toLocaleString('es-PE'), 'stat-format': format, 'prop-format': format, 'prop-size': file ? `${(file.size / 1024).toLocaleString('es-PE', { maximumFractionDigits: 1 })} KB` : '—', 'context-name': currentName || 'Sin plano abierto', 'file-type': active ? format : 'CAD' })) el(id).textContent = value;
+  const units: Record<number, string> = { 0: 'Sin unidad', 1: 'Pulgadas', 2: 'Pies', 4: 'Milímetros', 5: 'Centímetros', 6: 'Metros', 7: 'Kilómetros' };
+  el('prop-units').textContent = units[Number(documentModel?.header?.$INSUNITS ?? documentModel?.header?.INSUNITS)] ?? documentModel?.units ?? '—';
+  const host = el('entity-types'); host.replaceChildren();
+  const counts = new Map<string, number>();
+  for (const entity of documentModel?.entities ?? []) { const type = entity.type || 'OTROS'; counts.set(type, (counts.get(type) ?? 0) + 1); }
+  for (const [type, total] of [...counts].sort((a,b) => b[1] - a[1])) {
+    const row = document.createElement('div'); row.className = 'entity-row';
+    const label = document.createElement('span'); label.textContent = type;
+    const value = document.createElement('strong'); value.textContent = total.toLocaleString('es-PE');
+    row.append(label, value); host.append(row);
+  }
+  if (!counts.size) { const p = document.createElement('p'); p.className = 'small-note'; p.textContent = 'Carga un plano para consultar su contenido.'; host.append(p); }
+}
 function notice(message: string, error = false) { const n = el('notice'); n.textContent = message; n.classList.toggle('error', error); n.hidden = false; }
 el('notice').onclick = () => { el('notice').hidden = true; };
 function renderLayers() {
@@ -73,8 +91,8 @@ async function open(file: File) {
     el('empty').hidden = true;
     el('filename').textContent = file.name; el('tab').textContent = file.name;
     el('filemeta').textContent = `${result.format.toUpperCase()} · ${(file.size / 1024).toLocaleString('es-PE', { maximumFractionDigits: 1 })} KB`;
-    el<HTMLInputElement>('search').value = ''; renderLayers();
-    el('status').textContent = `${documentModel?.entities.length.toLocaleString('es-PE') ?? 0} entidades · ${Object.keys(documentModel?.layers ?? {}).length} capas · ${(result.elapsedMs / 1000).toFixed(2)} s`;
+    el<HTMLInputElement>('search').value = ''; renderLayers(); updateProperties(file);
+    el('status').textContent = `${documentModel?.entities.length.toLocaleString('es-PE') ?? 0} entidades · ${el('layer-count').textContent} capas · ${(result.elapsedMs / 1000).toFixed(2)} s`;
     const warnings = [...new Set([...result.warnings, ...viewer.getMissingReferences().map(r => `Referencia ausente: ${r.fileName}`)])];
     if (!documentModel?.entities.length) notice('El archivo se abrió, pero no contiene geometría 2D visible compatible.');
     else if (warnings.length) notice(`Vista posiblemente parcial · ${warnings.length} aviso(s): ${warnings.slice(0, 3).join(' · ')}. Haz clic para cerrar.`);
@@ -90,6 +108,27 @@ input.onchange = () => { const file = input.files?.[0]; input.value = ''; if (fi
 el('cancel').onclick = () => controller?.abort();
 el('plus').onclick = () => viewer.zoomIn(); el('minus').onclick = () => viewer.zoomOut(); el('fit').onclick = () => viewer.fit();
 el('search').oninput = renderLayers;
+el('clear').onclick = () => {
+  if (controller) return;
+  viewer.clear(); active = false; documentModel = undefined; currentName = '';
+  el('empty').hidden = false; el('notice').hidden = true;
+  el('filename').textContent = 'Ningún archivo abierto'; el('filemeta').textContent = 'Formatos DWG y DXF'; el('tab').textContent = 'Visor de planos';
+  el('status').textContent = 'Listo para abrir un plano'; el('coordinates').textContent = 'MX CAD · LOCAL';
+  el<HTMLInputElement>('search').value = ''; renderLayers(); updateProperties(); controls();
+};
+el('panel-toggle').onclick = () => {
+  const hidden = document.querySelector('.shell')!.classList.toggle('panels-hidden');
+  el('panel-toggle').setAttribute('aria-pressed', String(hidden));
+  requestAnimationFrame(() => viewer.resize());
+};
+function setBackground(light: boolean) {
+  viewer.setCanvasOptions({ background: light ? '#f4f5f7' : '#111d31', foreground: light ? '#192844' : '#e4ebf3' });
+  document.querySelector('.shell')!.classList.toggle('light-view', light);
+  el('background-dark').setAttribute('aria-pressed', String(!light)); el('background-light').setAttribute('aria-pressed', String(light));
+  document.querySelector<HTMLDetailsElement>('.general')!.open = false;
+}
+el('background-dark').onclick = () => setBackground(false);
+el('background-light').onclick = () => setBackground(true);
 el('export').onclick = async () => {
   try {
     const canvas = await viewer.captureCanvas();
