@@ -7,6 +7,7 @@ test('seleccionar, medir con snap, dibujar y exportar trazos', {timeout:90000},a
   const app=await electron.launch({args:['.'],env:{...process.env,MX_CAD_TEST:'1'}});
   try{
     const page=await app.firstWindow();page.setDefaultTimeout(15000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
+    await page.setViewportSize({width:1000,height:850});
     await page.locator('#tool-line').waitFor();
     assert.equal(await page.locator('.sidebar > .panel').count(),1);
     await expect.poll(()=>page.locator('.brand-logo-img').evaluate(img=>img.naturalWidth)).toBeGreaterThan(0);

@@ -66,7 +66,7 @@ export class CadTools {
     if(!found&&this.snapLine)for(const s of this.all())for(const [a,b]of segments(s)){const q=closest(p,a,b),d=distance(p,q);if(d<best){best=d;found=q;}}
     if(found){this.snapped=found;return {...found};}return {...p,z:0};
   }
-  private setMode(mode:Mode){this.mode=mode;this.pending=[];this.cursor=undefined;this.snapped=undefined;this.viewport.classList.toggle('drawing-mode',mode!=='select'&&mode!=='pan');this.sync();this.redraw();}
+  private setMode(mode:Mode){this.mode=mode;this.pending=[];this.cursor=undefined;this.snapped=undefined;document.querySelector('.shell')!.classList.toggle('has-selection',mode==='select'&&!!this.selected);this.viewport.classList.toggle('drawing-mode',mode!=='select'&&mode!=='pan');this.sync();this.redraw();}
   private sync(){
     for(const mode of ['select','pan','measure','line','polygon'])document.getElementById(`tool-${mode}`)!.setAttribute('aria-pressed',String(this.mode===mode));
     document.getElementById('snap-point')!.setAttribute('aria-pressed',String(this.snapPoint));document.getElementById('snap-line')!.setAttribute('aria-pressed',String(this.snapLine));
