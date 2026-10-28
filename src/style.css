@@ -209,3 +209,18 @@ button:disabled{opacity:.35;cursor:default}
 @media(max-width:580px){.body{grid-template-columns:minmax(0,1fr) 56px}.cad-dock{border-radius:8px}.dock-button{font-size:7px;min-height:43px}.has-selection .properties,.panels-hidden.has-selection .properties{right:63px;width:min(240px,calc(100% - 65px));z-index:11}.toolbar{flex-wrap:wrap;gap:3px}.toolbar .viewer-title{max-width:95px}.toolbar .tools{gap:2px}.tools button{font-size:9px;padding:5px}.empty h2{font-size:23px}.empty p{font-size:10px}.empty>div{padding:20px 10px}.empty-icon{width:50px;height:50px;margin-bottom:14px}.empty-actions button{font-size:9px;padding:8px}.formats{font-size:6px}.cad-command{max-height:62px;overflow:hidden}}
 
 .cad-dock{gap:4px;padding:5px}.dock-button{min-height:38px;padding:4px 2px;gap:3px}.dock-button>span{font-size:17px}.dock-heading{padding:3px 0;line-height:10px}.cad-dock[inert]{opacity:.45}
+
+/* A single full-height layer manager on the left. */
+.sidebar{overflow:hidden;gap:0}.sidebar>.layer-panel{height:100%;min-height:0;flex:1}
+.layer-content{gap:8px}.layer-content .search{margin-bottom:0}.layers{min-height:0}
+.new-layer-form{display:grid;grid-template-columns:minmax(0,1fr) 28px 28px;gap:5px;flex-shrink:0}
+.new-layer-form input:not([type=color]),#active-layer{min-width:0;width:100%;border:1px solid #ffffff1c;border-radius:5px;background:#101e33;color:#edf2f8;padding:8px;font-size:10px}
+.new-layer-form input[type=color]{width:28px;height:31px;padding:2px;border:1px solid #ffffff1c;border-radius:5px;background:#101e33}
+.new-layer-form button{padding:4px;font-size:16px;color:var(--gold)}
+.active-layer-label{font-size:8px;color:var(--gold);letter-spacing:.7px;margin-top:5px}
+.layer-list-heading{display:flex;gap:11px;color:#7f94af;font-size:8px;border-bottom:1px solid var(--border);padding:7px 2px}
+.layer-panel-note{flex-shrink:0;border-top:1px solid var(--border);padding-top:9px;font-size:9px;line-height:1.6;color:#8296b2}
+.layer-error{color:#ffb9aa;font-size:10px;margin:0}.layer.active-layer{background:#f9bc390c;border-radius:4px}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.properties .file-panel,.properties .summary-panel{border:0;box-shadow:none;background:transparent;border-radius:0;margin-bottom:18px;border-bottom:1px solid var(--border)}
+.properties .file-panel .section-head,.properties .summary-panel .section-head{padding:5px 0 10px;border:0}
+.properties .file-panel .panel-content{padding:0 0 12px}.properties .file-panel .small-note{display:none}.properties .summary-panel .stats{padding:0 0 12px}

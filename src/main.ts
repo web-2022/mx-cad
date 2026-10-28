@@ -14,6 +14,13 @@ let controller: AbortController | undefined;
 let documentModel: CadDocument | undefined;
 let currentName = '';
 let tools: CadTools | undefined;
+const sessionLayers = new Map<string, { name: string; color: string; isVisible: boolean }>();
+let activeLayer = 'MX_TRAZOS';
+function layersForView() {
+  const layers = new Map(Object.values(documentModel?.layers ?? {}).map(layer => [layer.name, layer]));
+  for (const [name, layer] of sessionLayers) layers.set(name, layer);
+  return [...layers.values()];
+}
 const viewer = new CadViewer({
   container: el('viewer'),
   wasmPath: new URL('wasm/', document.baseURI).href,
@@ -36,7 +43,7 @@ function controls() {
 function updateProperties(file?: File) {
   const count = documentModel?.entities.length ?? 0;
   const format = file ? file.name.split('.').pop()!.toUpperCase() : '—';
-  const layers = new Set(Object.values(documentModel?.layers ?? {}).map(layer => layer.name)).size;
+  const layers = layersForView().length;
   for (const [id, value] of Object.entries({ 'file-count': active ? '1 archivo' : '0 archivos', 'stat-files': active ? '1' : '0', 'stat-layers': String(layers), 'stat-entities': count.toLocaleString('es-PE'), 'stat-format': format, 'prop-format': format, 'prop-size': file ? `${(file.size / 1024).toLocaleString('es-PE', { maximumFractionDigits: 1 })} KB` : '—', 'context-name': currentName || 'Sin plano abierto', 'file-type': active ? format : 'CAD' })) el(id).textContent = value;
   const units: Record<number, string> = { 0: 'Sin unidad', 1: 'Pulgadas', 2: 'Pies', 4: 'Milímetros', 5: 'Centímetros', 6: 'Metros', 7: 'Kilómetros' };
   el('prop-units').textContent = units[Number(documentModel?.header?.$INSUNITS ?? documentModel?.header?.INSUNITS)] ?? documentModel?.units ?? '—';
@@ -56,9 +63,15 @@ el('notice').onclick = () => { el('notice').hidden = true; };
 function renderLayers() {
   const host = el('layers'); host.replaceChildren();
   const query = el<HTMLInputElement>('search').value.toLocaleLowerCase();
-  const layers = [...new Map(Object.entries(documentModel?.layers ?? {}).map(entry => [entry[1].name, entry])).values()];
+  const layers = layersForView();
   el('layer-count').textContent = String(layers.length);
-  for (const [key, layer] of layers) {
+  el('stat-layers').textContent = String(layers.length);
+  const select = el<HTMLSelectElement>('active-layer'); select.replaceChildren();
+  for (const name of new Set(['MX_TRAZOS', ...layers.map(layer => layer.name)])) {
+    const option = document.createElement('option'); option.value = name; option.textContent = name; select.append(option);
+  }
+  select.value = activeLayer;
+  for (const layer of layers) {
     if (!layer.name.toLocaleLowerCase().includes(query)) continue;
     const row = document.createElement('label'); row.className = 'layer';
     const check = document.createElement('input'); check.type = 'checkbox'; check.checked = layer.isVisible !== false && !layer.isFrozen;
@@ -67,18 +80,21 @@ function renderLayers() {
     if (typeof layer.color === 'string' && CSS.supports('color', layer.color)) swatch.style.background = layer.color;
     const name = document.createElement('span'); name.textContent = layer.name; name.title = layer.name;
     check.onchange = () => {
-      if (!documentModel) return;
-      for (const candidate of Object.values(documentModel.layers)) {
-        if (candidate.name === documentModel.layers[key].name) {
+      if (sessionLayers.has(layer.name)) sessionLayers.get(layer.name)!.isVisible = check.checked;
+      for (const candidate of Object.values(documentModel?.layers ?? {})) {
+        if (candidate.name === layer.name) {
           candidate.isVisible = check.checked;
           candidate.isFrozen = false;
         }
       }
-      const state = viewer.renderer.getViewState();
-      viewer.renderer.setDocument(documentModel);
-      viewer.renderer.setViewState(state);
+      if (documentModel) {
+        const state = viewer.renderer.getViewState();
+        viewer.renderer.setDocument(documentModel);
+        viewer.renderer.setViewState(state);
+      }
       tools?.refresh();
     };
+    if (layer.name === activeLayer) row.classList.add('active-layer');
     row.append(check, swatch, name); host.append(row);
   }
   if (!host.children.length) { const p = document.createElement('p'); p.className = 'empty-layer'; p.textContent = active ? 'No hay capas que coincidan.' : 'Las capas aparecerán al abrir un plano.'; host.append(p); }
@@ -92,6 +108,7 @@ async function open(file: File) {
   el('progress-text').textContent = 'Abriendo plano…';
   try {
     const result = await viewer.loadFile(file, { signal: controller.signal });
+    sessionLayers.clear(); activeLayer = 'MX_TRAZOS'; el('layer-error').hidden = true;
     documentModel = viewer.renderer.getSourceDocument(); active = true; currentName = file.name;
     tools?.reset();
     el('empty').hidden = true;
@@ -114,9 +131,19 @@ input.onchange = () => { const file = input.files?.[0]; input.value = ''; if (fi
 el('cancel').onclick = () => controller?.abort();
 el('plus').onclick = () => viewer.zoomIn(); el('minus').onclick = () => viewer.zoomOut(); el('fit').onclick = () => viewer.fit();
 el('search').oninput = renderLayers;
+el('active-layer').onchange = () => { activeLayer = el<HTMLSelectElement>('active-layer').value; renderLayers(); };
+el('new-layer-form').onsubmit = e => {
+  e.preventDefault(); const name = el<HTMLInputElement>('new-layer-name').value.trim();
+  const error = el('layer-error');
+  if (!name || /[<>/\\":;?*|=\u0000-\u001f]/.test(name)) { error.textContent = 'Usa un nombre sin caracteres especiales de CAD.'; error.hidden = false; return; }
+  if (layersForView().some(layer => layer.name.toLocaleLowerCase() === name.toLocaleLowerCase())) { error.textContent = 'Ya existe una capa con ese nombre.'; error.hidden = false; return; }
+  sessionLayers.set(name, { name, color: el<HTMLInputElement>('new-layer-color').value, isVisible: true });
+  activeLayer = name; error.hidden = true; el<HTMLInputElement>('new-layer-name').value = ''; renderLayers(); tools?.refresh();
+};
 el('clear').onclick = () => {
   if (controller) return;
   viewer.clear(); active = false; documentModel = undefined; currentName = '';
+  sessionLayers.clear(); activeLayer = 'MX_TRAZOS'; el('layer-error').hidden = true;
   tools?.reset();
   el('empty').hidden = false; el('notice').hidden = true;
   el('filename').textContent = 'Ningún archivo abierto'; el('filemeta').textContent = 'Formatos DWG y DXF'; el('tab').textContent = 'Visor de planos';
@@ -153,5 +180,11 @@ window.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); selectFile(); }
   else if (!(e.target instanceof HTMLInputElement) && active && !controller && e.key.toLowerCase() === 'f') viewer.fit();
 });
-tools = new CadTools(viewer);
+tools = new CadTools(viewer, {
+  activeLayer: () => activeLayer,
+  visible: name => { const layer = layersForView().find(layer => layer.name === name); return layer?.isVisible !== false && !layer?.isFrozen; },
+  color: name => { const color = layersForView().find(layer => layer.name === name)?.color; return typeof color === 'string' ? color : '#f39c1c'; },
+  layers: () => [...sessionLayers.values()],
+  created: name => { if (!layersForView().some(layer => layer.name === name)) sessionLayers.set(name, { name, color: '#f39c1c', isVisible: true }); renderLayers(); }
+});
 window.addEventListener('beforeunload', () => viewer.destroy()); controls();

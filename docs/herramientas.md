@@ -2,6 +2,10 @@
 
 La barra vertical del extremo derecho incluye:
 
+El panel izquierdo es una sola ventana de **Capas del plano**. Permite buscar y mostrar u ocultar capas, crear una capa de sesión con nombre y color, y elegir la capa activa para los nuevos trazos. Los nombres duplicados se rechazan sin distinguir mayúsculas. El archivo y su resumen están en Propiedades, a la derecha.
+
+Al ocultar una capa también se ocultan sus trazos de sesión y se excluyen del snap y la selección. El DXF exportado conserva los nombres y la visibilidad de las capas de sesión, incluidas las vacías; los colores se aproximan a la paleta ACI compatible con DXF R12.
+
 - **Seleccionar:** clic en una entidad visible para resaltarla y consultar sus propiedades. También puedes hacer clic dentro de un polígono cerrado. Arrastrar desplaza la vista.
 - **Mover:** desplazar la vista arrastrando. La rueda siempre controla el zoom.
 - **Medir:** dos clics definen una distancia. El panel muestra longitud XY, longitud 3D y coordenadas.
