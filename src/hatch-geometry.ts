@@ -11,7 +11,7 @@ function polyline(vertices:any[],closed=true):P[]{
   const out:P[]=[];
   for(let i=0;i<vertices.length;i++){
     const a=vertices[i],b=vertices[(i+1)%vertices.length];if(!valid(a))continue;out.push(a);
-    const bulge=Number(a.bulge??0);if(!bulge||!valid(b)||(!closed&&i===vertices.length-1))continue;
+    const bulge=Number((a as P & {bulge?:number}).bulge??0);if(!bulge||!valid(b)||(!closed&&i===vertices.length-1))continue;
     const dx=b.x-a.x,dy=b.y-a.y,center={x:(a.x+b.x)/2-dy*(1-bulge*bulge)/(4*bulge),y:(a.y+b.y)/2+dx*(1-bulge*bulge)/(4*bulge)},radius=Math.hypot(a.x-center.x,a.y-center.y),start=Math.atan2(a.y-center.y,a.x-center.x);
     out.push(...arc(center,radius,radius,start,start+4*Math.atan(bulge),bulge>0).slice(1,-1));
   }return out;
