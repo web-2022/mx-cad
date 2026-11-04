@@ -25,6 +25,10 @@ test('DXF: separate sheets, paper sizes, viewport hatch islands, layers, local i
       const scale=Math.min(canvas.clientWidth/420,canvas.clientHeight/297)*.88,dpr=canvas.width/canvas.clientWidth,ctx=canvas.getContext('2d');let colored=0;
       for(let x=155;x<185;x+=2)for(let y=90;y<110;y+=2){const p=ctx.getImageData(Math.round((canvas.clientWidth/2+(x-210)*scale)*dpr),Math.round((canvas.clientHeight/2-(y-148.5)*scale)*dpr),1,1).data;if(Math.min(p[0],p[1],p[2])<220)colored++;}return colored;
     });assert.ok(hatchPixels>0,'A viewport must contain hatch pattern, not just a paper border');
+    const dimensionInk=await page.locator('#viewer-paper canvas').evaluate(canvas=>{
+      const scale=Math.min(canvas.clientWidth/420,canvas.clientHeight/297)*.88,dpr=canvas.width/canvas.clientWidth,ctx=canvas.getContext('2d');let ink=0;
+      for(let x=40;x<100;x+=2)for(let y=44;y<=46;y+=.25){const p=ctx.getImageData(Math.round((canvas.clientWidth/2+(x-210)*scale)*dpr),Math.round((canvas.clientHeight/2-(y-148.5)*scale)*dpr),1,1).data;if(Math.min(p[0],p[1],p[2])<220)ink++;}return ink;
+    });assert.ok(dimensionInk>0,'Dimension graphics block must survive paper-space normalization');
     await page.getByRole('checkbox',{name:'Mostrar capa OCULTA',exact:true}).uncheck();
     await page.locator('#reference-input').setInputFiles('tests/fixtures/ref.png');
     await expect(page.locator('#notice')).toContainText('Referencias locales procesadas');

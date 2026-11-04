@@ -43,9 +43,9 @@ function hatchData(p:DxfPair[]){
 // Supplement fields skipped by dxf-parser, including the OBJECTS section.
 export function supplementDxf(doc:CadDocument,text:string){
   const records=scanDxf(text),all=[...doc.entities,...Object.values(doc.blocks).flatMap(b=>b.entities)],byHandle=new Map(all.filter(e=>e.handle).map(e=>[e.handle!.toUpperCase(),e]));
-  let blockName='';const blockRecords:any[]=[];
+  let blockName='';const blockRecords:any[]=[];let insert:CadEntity|undefined;const attached=new Set<CadEntity>();
   for(const r of records){
-    const p=r.pairs;if(r.type==='BLOCK_RECORD')blockRecords.push({name:str(p,2),handle:str(p,5),layoutHandle:str(p,340)});
+    const p=r.pairs;if(r.type!=='ATTRIB' && r.type!=='INSERT')insert=undefined;if(r.type==='BLOCK_RECORD')blockRecords.push({name:str(p,2),handle:str(p,5),layoutHandle:str(p,340)});
     if(r.section==='BLOCKS'&&r.type==='BLOCK'){blockName=str(p,2)??'';continue;}if(r.type==='ENDBLK'){blockName='';continue;}
     if(!['ENTITIES','BLOCKS'].includes(r.section)||['SEQEND','VERTEX'].includes(r.type))continue;
     const h=str(p,5)?.toUpperCase();let e=h?byHandle.get(h):undefined;
@@ -60,6 +60,9 @@ export function supplementDxf(doc:CadDocument,text:string){
     if(str(p,420)!==undefined)e.trueColor=num(p,420);
     if(str(p,440)!==undefined&&(num(p,440)>>>24)===2)e.opacity=(num(p,440)&255)/255;
     e.textStyleName=str(p,7);
+    if(r.type==='ATTRIB'||r.type==='ATTDEF'){e.attributeTag=str(p,2);e.attributeFlags=num(p,70);if(num(p,70)&1)e.isVisible=false;}
+    if(r.type==='INSERT')insert=e;
+    else if(r.type==='ATTRIB' && insert){insert.attribs??=[];if(!insert.attribs.some(a=>a.handle===e!.handle))insert.attribs.push(e);attached.add(e);}
     if(['TEXT','MTEXT','ATTRIB','ATTDEF'].includes(r.type)){e.insertionPoint=pt(p,10);e.text=p.filter(x=>x.code===1||x.code===3).map(x=>x.value).join('').replace(/\\P/g,'\n');e.textHeight=num(p,40,1);e.rotation=radians(num(p,50));e.xScale=num(p,41,1);e.halign=num(p,72);e.valign=num(p,73);e.kind='text';}
     if(r.type==='HATCH')Object.assign(e,hatchData(p),{kind:'hatch'});
     if(r.type==='DIMENSION'&&str(p,2)){e.kind='insert';e.blockName=str(p,2);e.insertionPoint={x:0,y:0};e.rotation=0;}
@@ -71,6 +74,8 @@ export function supplementDxf(doc:CadDocument,text:string){
   doc.metadata.mxTextStyles=records.filter(r=>r.type==='STYLE').map(r=>({handle:str(r.pairs,5),name:str(r.pairs,2),fontFile:str(r.pairs,3),bigFontFile:str(r.pairs,4)}));
   for(const r of records.filter(r=>r.type==='LAYER')){const layer=doc.layers[str(r.pairs,2)??''];if(layer){layer.raw={...record(layer.raw),handle:str(r.pairs,5)};layer.lineType=str(r.pairs,6);layer.lineweight=num(r.pairs,370,-1);}}
   doc.lineTypes??={};for(const r of records.filter(r=>r.type==='LTYPE')){const name=str(r.pairs,2);if(name)doc.lineTypes[name]={name,pattern:r.pairs.filter(x=>x.code===49).map(x=>({length:Number(x.value)}))};}
+  doc.entities=doc.entities.filter(e=>!attached.has(e));
+  for(const block of Object.values(doc.blocks))block.entities=block.entities.filter(e=>!attached.has(e));
   // Some DXFs identify owners only through BLOCK_RECORD; other files use 410.
   separateDrawingSpaces(doc,layouts,blockRecords);
   return doc;

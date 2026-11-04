@@ -494,10 +494,12 @@ export class CadCanvasRenderer {
     if (block && depth < this.opts.maxInsertDepth) {
       const matrix = matrixFromInsert(e, block.basePoint ?? { x: 0, y: 0 });
       for (const child of block.entities) {
+        if(child.type==='ATTDEF' && e.attribs?.some(a=>a.attributeTag && a.attributeTag===child.attributeTag))continue;
         const inheritedColor = applyByBlockColorInheritance(child, e, this.document, { foreground: this.opts.foreground, background: this.opts.background, trueColorByteOrder: this.opts.trueColorByteOrder, contrastMode: this.opts.contrastMode, minColorContrast: this.opts.minColorContrast });
         const inherited = applyByBlockLineTypeInheritance(inheritedColor, e, this.document);
         this.drawEntityTracked(transformEntity(inherited, matrix), depth + 1);
       }
+      for(const attr of e.attribs??[])this.drawEntityTracked(attr,depth+1);
       return;
     }
     const p = e.insertionPoint;
@@ -533,6 +535,7 @@ export class CadCanvasRenderer {
     for(const loop of loops){const first=this.worldToScreen(loop[0]);ctx.moveTo(first.x,first.y);for(const p of loop.slice(1)){const q=this.worldToScreen(p);ctx.lineTo(q.x,q.y);}ctx.closePath();}
     const rule:CanvasFillRule=Number(e.hatchStyle)===2?'nonzero':'evenodd';
     const solid=e.solidFill!==0;
+    if(!solid && !(e.definitionLines as unknown[])?.length){ctx.stroke();ctx.restore();this.stats.drawn++;return;}
     if(solid){ctx.fill(rule);}else{
       ctx.clip(rule);
       const points=loops.flat(),bounds=points.reduce((b,p)=>({minX:Math.min(b.minX,p.x),maxX:Math.max(b.maxX,p.x),minY:Math.min(b.minY,p.y),maxY:Math.max(b.maxY,p.y)}),{minX:Infinity,maxX:-Infinity,minY:Infinity,maxY:-Infinity});
