@@ -20,3 +20,4 @@ test('capas ocultas excluidas; puntos y segmentos curvos disponibles',()=>{
   const d={layers:{OFF:{name:'OFF',isVisible:false}},blocks:{},entities:[{type:'POINT',layer:'0',insertionPoint:{x:4,y:8,z:123}},{type:'LINE',layer:'OFF',startPoint:{x:0,y:0},endPoint:{x:2,y:0}},{type:'LWPOLYLINE',vertices:[{x:0,y:0,bulge:1},{x:2,y:0}]}]};
   const out=shapesFromDocument(d);assert.equal(out.length,2);assert.equal(out[0].nodes[0].z,123);assert.ok(Math.abs(metrics(out[1]).length-Math.PI)<.001);
 });
+

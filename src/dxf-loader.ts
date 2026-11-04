@@ -1,4 +1,6 @@
-import { DxfLoader, type CadLoadInput, type CadLoadOptions, type CadLayer } from '@flyfish-dev/cad-viewer';
+import { supplementDxf } from './dxf-supplement';
+import { decodeDxfText } from './vendor/cad/loaders/dxf/DxfLoader';
+import { DxfLoader, type CadLoadInput, type CadLoadOptions, type CadLayer } from './vendor/cad/index';
 
 // dxf-parser exposes layer records under tables.layer.layers. The viewer's
 // normalizer currently expects a flat table, so supply that form explicitly.
@@ -21,6 +23,9 @@ export class LayerAwareDxfLoader extends DxfLoader {
         Object.defineProperty(result.document.layers, name, { value: { name, isVisible: true, colorIndex: 7 }, enumerable: true, writable: true, configurable: true });
       }
     }
+    const buffer=input.buffer??await input.file!.arrayBuffer();
+    supplementDxf(result.document,decodeDxfText(buffer instanceof Uint8Array?buffer:new Uint8Array(buffer),options.dxfEncoding));
     return result;
   }
 }
+

@@ -229,3 +229,6 @@ button:disabled{opacity:.35;cursor:default}
 @media(max-width:780px){#drawing-region{max-width:90px}.toolbar{flex-wrap:wrap;height:auto}.workspace{grid-template-rows:minmax(57px,auto) minmax(0,1fr) 30px}}
 
 .drawing-warnings{margin:12px 0 18px;padding:10px;background:#f9bc3909;border:1px solid var(--border);border-radius:6px;font-size:10px;color:#d8c99e}.drawing-warnings summary{cursor:pointer;color:var(--gold)}.drawing-warnings p{line-height:1.6;overflow-wrap:anywhere}.drawing-warnings button{font-size:9px}
+
+
+.layout-tabs{display:flex;gap:4px;overflow-x:auto;padding:6px 10px;background:#101c30;min-height:36px;flex-shrink:0}.layout-tabs button{white-space:nowrap;font-size:11px;padding:5px 12px;border:1px solid #354459;border-radius:5px;color:#cdd8e8;background:#1c2a40}.layout-tabs button[aria-selected="true"]{background:#f5b83b;color:#111b2b;border-color:#f5b83b}.layout-tabs button:focus-visible{outline:2px solid #fff;outline-offset:2px}.viewer-paper{position:absolute;inset:0}.workspace{grid-template-rows:auto auto minmax(0,1fr) auto}#load-references{font-size:10px;margin:10px 0;padding:8px}#paper-info{white-space:normal;line-height:1.5}

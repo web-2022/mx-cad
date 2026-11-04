@@ -82,3 +82,4 @@ test('DXF local: abrir, capas, zoom, PNG y archivo inválido', { timeout: 90000 
   } finally { await app.close(); }
 });
 
+

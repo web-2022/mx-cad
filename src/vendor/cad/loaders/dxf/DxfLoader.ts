@@ -1,0 +1,524 @@
+import { addBlock, addLayer, createCadDocument, normalizeCadEntity, numberOrUndefined, pointFromUnknown, stringOrUndefined } from '../../core/entity.js';
+import { detectCadFormat, extensionOf, readInputBytes } from '../../core/format.js';
+import { degreesToRadians } from '../../core/geometry.js';
+import type { CadBlock, CadDocument, CadEntity, CadLayer, CadLoadInput, CadLoadOptions, CadLoadResult, CadLoader, CadPoint3D } from '../../core/types.js';
+import { applyDxfBomSupplement, parseDxfBomSupplement } from './DxfBomSupplement.js';
+
+export class DxfLoader implements CadLoader {
+  readonly id = 'dxf';
+  readonly label = 'DXF / JavaScript parser';
+  readonly formats = ['dxf'] as const;
+  private readonly defaults: CadLoadOptions;
+
+  constructor(defaults: CadLoadOptions = {}) {
+    this.defaults = defaults;
+  }
+
+  accepts(input: CadLoadInput, bytes?: Uint8Array): boolean {
+    return extensionOf(input) === 'dxf' || detectCadFormat(input, bytes) === 'dxf';
+  }
+
+  async load(input: CadLoadInput, options: CadLoadOptions = {}): Promise<CadLoadResult> {
+    const mergedOptions = { ...this.defaults, ...options };
+    const started = performance.now();
+    const bytes = await readInputBytes(input);
+    const text = decodeDxfText(bytes, mergedOptions.dxfEncoding);
+    const warnings: string[] = [];
+    let parsed: unknown;
+    try {
+      parsed = await parseWithDxfParser(text);
+    } catch (error) {
+      warnings.push(`dxf-parser failed, using built-in fallback parser: ${error instanceof Error ? error.message : String(error)}`);
+      parsed = parseDxfFallback(text);
+    }
+    const document = normalizeDxfDatabase(parsed, input.fileName ?? input.file?.name, warnings);
+    applyDxfBomSupplement(document, parseDxfBomSupplement(text));
+    const elapsedMs = performance.now() - started;
+    return { document, raw: parsed, bytes: bytes.byteLength, elapsedMs, format: 'dxf', warnings: document.warnings };
+  }
+}
+
+async function parseWithDxfParser(text: string): Promise<unknown> {
+  const module = await import('dxf-parser') as { default?: new () => { parseSync(text: string): unknown }; DxfParser?: new () => { parseSync(text: string): unknown } };
+  const Parser = module.default ?? module.DxfParser;
+  if (!Parser) throw new Error('dxf-parser did not expose a parser constructor.');
+  return new Parser().parseSync(text);
+}
+
+export function normalizeDxfDatabase(parsed: unknown, sourceName?: string, warnings: string[] = []): CadDocument {
+  const record = parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+  const layers = extractDxfLayers(record);
+  const blocks = extractDxfBlocks(record);
+  const rawEntities = Array.isArray(record.entities) ? record.entities : [];
+  const entities = rawEntities
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    .map((item) => normalizeDxfEntity(item));
+
+  const document = createCadDocument({
+    format: 'dxf',
+    sourceName,
+    header: record.header && typeof record.header === 'object' ? record.header as Record<string, unknown> : {},
+    layers,
+    blocks,
+    entities,
+    metadata: { parser: 'dxf-parser + cad-viewer normalizer' },
+    warnings,
+    raw: parsed
+  });
+  if (entities.length === 0) document.warnings.push('DXF file did not expose any ENTITIES.');
+  return document;
+}
+
+function normalizeDxfEntity(raw: Record<string, unknown>): CadEntity {
+  const type = String(raw.type ?? raw.entityType ?? 'UNKNOWN').toUpperCase();
+  const entity = normalizeCadEntity(raw, type);
+  const rawColorNumber = numberOrUndefined(raw.colorIndex ?? raw.colorNumber ?? raw.aci);
+  const rawColor = numberOrUndefined(raw.color);
+  entity.colorIndex = rawColorNumber ?? (rawColor !== undefined && Math.abs(rawColor) <= 257 ? rawColor : undefined);
+  entity.trueColor = (raw.trueColor ?? raw.true_color ?? raw.colorRGB ?? raw.trueColorValue ?? (rawColor !== undefined && Math.abs(rawColor) > 257 ? rawColor : undefined)) as CadEntity['trueColor'];
+  entity.layer = stringOrUndefined(raw.layer ?? raw.layerName) ?? '0';
+  entity.isClosed = Boolean(raw.shape ?? raw.closed ?? raw.isClosed) || ((Number(raw.flag ?? raw.flags ?? 0) & 1) === 1);
+
+  if (type === 'LINE') {
+    // dxf-parser stores LINE endpoints as two vertices, unlike LibreDWG's
+    // startPoint/endPoint records. Normalize both shapes before rendering.
+    entity.startPoint = entity.startPoint
+      ?? pointFromUnknown({ x: raw.x1 ?? raw.x, y: raw.y1 ?? raw.y, z: raw.z1 ?? raw.z })
+      ?? entity.vertices?.[0];
+    entity.endPoint = entity.endPoint
+      ?? pointFromUnknown({ x: raw.x2, y: raw.y2, z: raw.z2 })
+      ?? entity.vertices?.[1];
+  }
+  if (type === 'TEXT' || type === 'MTEXT' || type === 'ATTRIB' || type === 'ATTDEF') {
+    entity.insertionPoint = pointFromUnknown(raw.startPoint ?? raw.position ?? raw.insertionPoint) ?? entity.insertionPoint;
+    entity.text = normalizeDxfText(raw.text ?? raw.string ?? raw.value) ?? entity.text;
+    entity.textHeight = numberOrUndefined(raw.textHeight ?? raw.height) ?? entity.textHeight;
+    entity.rotation = normalizeRotation(raw.rotation ?? raw.angle);
+  }
+  if (type === 'ARC' || type === 'ELLIPSE') {
+    entity.startAngle = normalizeAngle(raw.startAngle ?? raw.start_angle);
+    entity.endAngle = normalizeAngle(raw.endAngle ?? raw.end_angle);
+  }
+  if (type === 'INSERT') {
+    entity.blockName = stringOrUndefined(raw.name ?? raw.blockName) ?? entity.blockName;
+    entity.insertionPoint = pointFromUnknown(raw.position ?? raw.insertionPoint ?? raw.point) ?? entity.insertionPoint;
+    const sx = numberOrUndefined(raw.xScale ?? raw.scaleX ?? raw.xscale);
+    const sy = numberOrUndefined(raw.yScale ?? raw.scaleY ?? raw.yscale);
+    const sz = numberOrUndefined(raw.zScale ?? raw.scaleZ ?? raw.zscale);
+    if (sx !== undefined || sy !== undefined || sz !== undefined) entity.scale = { x: sx ?? 1, y: sy ?? sx ?? 1, z: sz ?? 1 };
+    entity.rotation = normalizeRotation(raw.rotation ?? raw.angle);
+  }
+  if (type === 'SPLINE') {
+    const control = normalizeControlPoints(raw.controlPoints ?? raw.control_points ?? raw.points);
+    if (control.length) entity.controlPoints = control;
+    const fit = normalizeControlPoints(raw.fitPoints ?? raw.fit_points);
+    if (fit.length) entity.fitPoints = fit;
+  }
+  if (type === 'HATCH') {
+    entity.loops = normalizeHatchLoops(raw);
+    entity.fillColorIndex = entity.colorIndex;
+  }
+  if (type === 'SOLID' || type === 'TRACE' || type === '3DFACE') {
+    entity.vertices = normalizeSolidVertices(raw);
+    entity.fillColorIndex = entity.colorIndex;
+  }
+  return entity;
+}
+
+function extractDxfLayers(raw: Record<string, unknown>): Record<string, CadLayer> {
+  const result: Record<string, CadLayer> = {};
+  const tables = raw.tables as Record<string, unknown> | undefined;
+  const layerTable = raw.layers ?? tables?.layer ?? tables?.LAYER ?? tables?.layers;
+  const candidates = expandRecords(layerTable);
+  for (const item of candidates) {
+    const rec = item as Record<string, unknown>;
+    const name = stringOrUndefined(rec.name ?? rec.layerName);
+    if (!name) continue;
+    addLayer(result, {
+      name,
+      color: (rec.color ?? rec.colorNumber ?? rec.colorIndex) as string | number | undefined,
+      colorIndex: numberOrUndefined(rec.colorNumber ?? rec.colorIndex ?? rec.color),
+      lineType: stringOrUndefined(rec.lineType ?? rec.linetype),
+      isVisible: Number(rec.colorNumber ?? rec.colorIndex ?? rec.color ?? 1) >= 0,
+      isFrozen: Boolean(rec.frozen),
+      isLocked: Boolean(rec.locked),
+      raw: rec
+    });
+  }
+  if (!result['0']) addLayer(result, { name: '0', colorIndex: 7, isVisible: true });
+  return result;
+}
+
+function extractDxfBlocks(raw: Record<string, unknown>): Record<string, CadBlock> {
+  const result: Record<string, CadBlock> = {};
+  const blocks = raw.blocks;
+  if (!blocks || typeof blocks !== 'object') return result;
+  if (Array.isArray(blocks)) {
+    for (const block of blocks) addDxfBlock(result, block);
+  } else {
+    for (const [name, block] of Object.entries(blocks as Record<string, unknown>)) addDxfBlock(result, block, name);
+  }
+  return result;
+}
+
+function addDxfBlock(target: Record<string, CadBlock>, blockValue: unknown, fallbackName?: string): void {
+  if (!blockValue || typeof blockValue !== 'object') return;
+  const rec = blockValue as Record<string, unknown>;
+  const name = stringOrUndefined(rec.name ?? rec.blockName ?? fallbackName);
+  if (!name) return;
+  const rawEntities = Array.isArray(rec.entities) ? rec.entities : [];
+  const entities = rawEntities
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    .map((item) => normalizeDxfEntity(item));
+  addBlock(target, { name, basePoint: pointFromUnknown(rec.basePoint ?? rec.position) ?? { x: 0, y: 0 }, entities, raw: rec });
+}
+
+function expandRecords(value: unknown): unknown[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'object') return [];
+  const rec = value as Record<string, unknown>;
+  if (Array.isArray(rec.entries)) return rec.entries;
+  if (Array.isArray(rec.records)) return rec.records;
+  if (Array.isArray(rec.layers)) return rec.layers;
+  return Object.values(rec).filter((x) => x && typeof x === 'object');
+}
+
+function normalizeControlPoints(value: unknown): CadPoint3D[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(pointFromUnknown).filter((p): p is CadPoint3D => !!p);
+}
+
+function normalizeSolidVertices(raw: Record<string, unknown>): CadPoint3D[] {
+  const direct = normalizeControlPoints(raw.vertices ?? raw.points);
+  if (direct.length) return direct;
+  const out: CadPoint3D[] = [];
+  for (let i = 0; i < 4; i++) {
+    const point = pointFromUnknown({ x: raw[`x${i}`] ?? raw[`x${i + 1}`], y: raw[`y${i}`] ?? raw[`y${i + 1}`], z: raw[`z${i}`] ?? raw[`z${i + 1}`] });
+    if (point) out.push(point);
+  }
+  return out;
+}
+
+function normalizeHatchLoops(raw: Record<string, unknown>): CadEntity['loops'] {
+  const loops = raw.boundaryLoops ?? raw.loops ?? raw.paths;
+  if (!Array.isArray(loops)) return undefined;
+  return loops.map((loop) => {
+    const rec = loop as Record<string, unknown>;
+    const vertices = normalizeControlPoints(rec.vertices ?? rec.points);
+    return { vertices, isClosed: true };
+  }).filter((loop) => loop.vertices && loop.vertices.length > 0);
+}
+
+function normalizeRotation(value: unknown): number | undefined {
+  const n = numberOrUndefined(value);
+  if (n === undefined) return undefined;
+  return Math.abs(n) > Math.PI * 2 + 1e-6 ? degreesToRadians(n) : n;
+}
+
+function normalizeAngle(value: unknown): number | undefined {
+  const n = numberOrUndefined(value);
+  if (n === undefined) return undefined;
+  return Math.abs(n) > Math.PI * 2 + 1e-6 ? degreesToRadians(n) : n;
+}
+
+export function decodeDxfText(bytes: Uint8Array, preferredEncoding?: string): string {
+  const explicitEncoding = normalizeDxfEncoding(preferredEncoding);
+  if (explicitEncoding) return decodeBytes(bytes, explicitEncoding);
+
+  const bomEncoding = detectBomEncoding(bytes);
+  if (bomEncoding) return decodeBytes(bytes, bomEncoding);
+
+  const declaredEncoding = normalizeDxfEncoding(detectDxfCodePage(bytes));
+  if (declaredEncoding) return decodeBytes(bytes, declaredEncoding);
+
+  const utf8 = decodeBytes(bytes, 'utf-8');
+  if (!utf8.includes('\uFFFD')) return utf8;
+
+  return chooseBestLegacyDxfDecode(bytes);
+}
+
+const DXF_CODEPAGE_ENCODING: Record<string, string> = {
+  ANSI_874: 'windows-874',
+  ANSI_932: 'shift_jis',
+  ANSI_936: 'gb18030',
+  ANSI_949: 'euc-kr',
+  ANSI_950: 'big5',
+  ANSI_1250: 'windows-1250',
+  ANSI_1251: 'windows-1251',
+  ANSI_1252: 'windows-1252',
+  ANSI_1253: 'windows-1253',
+  ANSI_1254: 'windows-1254',
+  ANSI_1255: 'windows-1255',
+  ANSI_1256: 'windows-1256',
+  ANSI_1257: 'windows-1257',
+  ANSI_1258: 'windows-1258',
+  BIG5: 'big5',
+  CP874: 'windows-874',
+  CP932: 'shift_jis',
+  CP936: 'gb18030',
+  CP949: 'euc-kr',
+  CP950: 'big5',
+  CP1250: 'windows-1250',
+  CP1251: 'windows-1251',
+  CP1252: 'windows-1252',
+  CP1253: 'windows-1253',
+  CP1254: 'windows-1254',
+  CP1255: 'windows-1255',
+  CP1256: 'windows-1256',
+  CP1257: 'windows-1257',
+  CP1258: 'windows-1258',
+  GB18030: 'gb18030',
+  GB2312: 'gb18030',
+  GBK: 'gb18030',
+  SHIFT_JIS: 'shift_jis',
+  SHIFTJIS: 'shift_jis',
+  SJIS: 'shift_jis',
+  UTF8: 'utf-8',
+  UTF_8: 'utf-8',
+  UTF16: 'utf-16le',
+  UTF_16: 'utf-16le',
+  UTF16LE: 'utf-16le',
+  UTF_16LE: 'utf-16le',
+  UTF16BE: 'utf-16be',
+  UTF_16BE: 'utf-16be'
+};
+
+function detectBomEncoding(bytes: Uint8Array): string | undefined {
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return 'utf-8';
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) return 'utf-16le';
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) return 'utf-16be';
+  return undefined;
+}
+
+function detectDxfCodePage(bytes: Uint8Array): string | undefined {
+  const header = decodeBytes(bytes.subarray(0, Math.min(bytes.byteLength, 128 * 1024)), 'iso-8859-1');
+  const lines = header.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  for (let index = 0; index < lines.length - 3; index++) {
+    if (lines[index]?.trim() !== '9' || lines[index + 1]?.trim().toUpperCase() !== '$DWGCODEPAGE') continue;
+    for (let cursor = index + 2; cursor < Math.min(index + 10, lines.length - 1); cursor += 2) {
+      const code = lines[cursor]?.trim();
+      const value = lines[cursor + 1]?.trim();
+      if (code === '3' && value) return value;
+    }
+  }
+  return undefined;
+}
+
+function normalizeDxfEncoding(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const key = trimmed.replace(/[-\s]+/g, '_').toUpperCase();
+  if (DXF_CODEPAGE_ENCODING[key]) return DXF_CODEPAGE_ENCODING[key];
+  const ansi = /^ANSI_(\d{3,4})$/.exec(key);
+  if (ansi) return normalizeDxfEncoding(`cp${ansi[1]}`);
+  const cp = /^CP(\d{3,4})$/.exec(key);
+  if (cp) {
+    if (cp[1] === '936') return 'gb18030';
+    if (cp[1] === '950') return 'big5';
+    if (cp[1] === '932') return 'shift_jis';
+    if (cp[1] === '949') return 'euc-kr';
+    return `windows-${cp[1]}`;
+  }
+  return trimmed;
+}
+
+function decodeBytes(bytes: Uint8Array, encoding: string): string {
+  try {
+    return new TextDecoder(encoding, { fatal: false }).decode(bytes);
+  } catch {
+    return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+  }
+}
+
+function chooseBestLegacyDxfDecode(bytes: Uint8Array): string {
+  const candidates = ['windows-1252', 'gb18030', 'big5', 'shift_jis', 'euc-kr', 'iso-8859-1'];
+  let bestText = '';
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (const encoding of candidates) {
+    const text = decodeBytes(bytes, encoding);
+    const score = scoreDxfDecode(text, encoding);
+    if (score < bestScore) {
+      bestScore = score;
+      bestText = text;
+    }
+  }
+  return bestText || decodeBytes(bytes, 'utf-8');
+}
+
+function scoreDxfDecode(text: string, encoding: string): number {
+  const replacements = countMatches(text, /\uFFFD/g);
+  const controls = countMatches(text, /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g);
+  const cjk = countMatches(text, /[\u3400-\u9FFF\uF900-\uFAFF]/g);
+  const hasDxfStructure = text.includes('SECTION') && (text.includes('ENTITIES') || text.includes('HEADER'));
+  let score = replacements * 10000 + controls * 1000;
+  if (hasDxfStructure) score -= 500;
+  if (encoding === 'windows-1252') score -= 2;
+  if (encoding === 'gb18030' && cjk >= 2) score -= 50 + Math.min(cjk, 200) * 2;
+  return score;
+}
+
+function countMatches(text: string, pattern: RegExp): number {
+  return text.match(pattern)?.length ?? 0;
+}
+
+function normalizeDxfText(value: unknown): string | undefined {
+  const text = stringOrUndefined(value);
+  if (text === undefined) return undefined;
+  return text
+    .replace(/\\U\+([0-9a-fA-F]{4,6})/g, (match, code: string) => {
+      const point = Number.parseInt(code, 16);
+      return Number.isFinite(point) && point >= 0 && point <= 0x10ffff ? String.fromCodePoint(point) : match;
+    })
+    .replace(/%%[cC]/g, '\u2205')
+    .replace(/%%[dD]/g, '\u00b0')
+    .replace(/%%[pP]/g, '\u00b1')
+    .replace(/\\P/g, '\n');
+}
+
+interface DxfPair { code: number; value: string }
+
+function parseDxfFallback(text: string): { header: Record<string, unknown>; tables: Record<string, unknown>; entities: CadEntity[]; blocks: Record<string, unknown> } {
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  const pairs: DxfPair[] = [];
+  for (let i = 0; i < lines.length - 1; i += 2) {
+    const code = Number(lines[i]?.trim());
+    const value = lines[i + 1] ?? '';
+    if (Number.isFinite(code)) pairs.push({ code, value: value.trimEnd() });
+  }
+  const entities: CadEntity[] = [];
+  const blocks: Record<string, unknown> = {};
+  let section = '';
+  let current: DxfPair[] = [];
+  let polyline: CadEntity | undefined;
+  for (let i = 0; i < pairs.length; i++) {
+    const pair = pairs[i];
+    if (pair.code === 0 && pair.value === 'SECTION') {
+      section = pairs[i + 1]?.code === 2 ? pairs[i + 1].value.toUpperCase() : '';
+      i++;
+      continue;
+    }
+    if (pair.code === 0 && pair.value === 'ENDSEC') {
+      flushEntity();
+      section = '';
+      continue;
+    }
+    if (section !== 'ENTITIES') continue;
+    if (pair.code === 0) {
+      flushEntity();
+      current = [pair];
+    } else current.push(pair);
+  }
+  flushEntity();
+  return { header: {}, tables: {}, entities, blocks };
+
+  function flushEntity(): void {
+    if (!current.length) return;
+    const type = current[0]?.value.toUpperCase();
+    if (type === 'VERTEX' && polyline) {
+      const v = readPoint(current, 10, 20, 30);
+      if (v) (polyline.vertices ??= []).push({ ...v, bulge: readNumber(current, 42) });
+      current = [];
+      return;
+    }
+    if (type === 'SEQEND') {
+      if (polyline) entities.push(polyline);
+      polyline = undefined;
+      current = [];
+      return;
+    }
+    if (polyline) {
+      entities.push(polyline);
+      polyline = undefined;
+    }
+    if (!type || type === 'EOF') { current = []; return; }
+    const e = entityFromPairs(type, current);
+    if (type === 'POLYLINE') polyline = e;
+    else entities.push(e);
+    current = [];
+  }
+}
+
+function entityFromPairs(type: string, pairs: DxfPair[]): CadEntity {
+  const common: Record<string, unknown> = {
+    type,
+    handle: readString(pairs, 5),
+    layer: readString(pairs, 8) ?? '0',
+    colorIndex: readNumber(pairs, 62),
+    trueColor: readNumber(pairs, 420),
+    lineType: readString(pairs, 6),
+    lineweight: readNumber(pairs, 370)
+  };
+  switch (type) {
+    case 'LINE': Object.assign(common, { startPoint: readPoint(pairs, 10, 20, 30), endPoint: readPoint(pairs, 11, 21, 31) }); break;
+    case 'CIRCLE': Object.assign(common, { center: readPoint(pairs, 10, 20, 30), radius: readNumber(pairs, 40) }); break;
+    case 'ARC': Object.assign(common, { center: readPoint(pairs, 10, 20, 30), radius: readNumber(pairs, 40), startAngle: degreesToRadiansSafe(readNumber(pairs, 50)), endAngle: degreesToRadiansSafe(readNumber(pairs, 51)) }); break;
+    case 'POINT': Object.assign(common, { point: readPoint(pairs, 10, 20, 30) }); break;
+    case 'TEXT':
+    case 'MTEXT': Object.assign(common, { insertionPoint: readPoint(pairs, 10, 20, 30), text: readJoinedText(pairs), textHeight: readNumber(pairs, 40), rotation: degreesToRadiansSafe(readNumber(pairs, 50)) }); break;
+    case 'LWPOLYLINE': Object.assign(common, { vertices: readLwPolylineVertices(pairs), flag: readNumber(pairs, 70), isClosed: (Number(readNumber(pairs, 70) ?? 0) & 1) === 1 }); break;
+    case 'POLYLINE': Object.assign(common, { vertices: [], flag: readNumber(pairs, 70), isClosed: (Number(readNumber(pairs, 70) ?? 0) & 1) === 1 }); break;
+    case 'ELLIPSE': Object.assign(common, { center: readPoint(pairs, 10, 20, 30), majorAxisEndPoint: readPoint(pairs, 11, 21, 31), axisRatio: readNumber(pairs, 40), startAngle: readNumber(pairs, 41), endAngle: readNumber(pairs, 42) }); break;
+    case 'SPLINE': Object.assign(common, { controlPoints: readRepeatedPoints(pairs, 10, 20, 30), degree: readNumber(pairs, 71), isClosed: (Number(readNumber(pairs, 70) ?? 0) & 1) === 1 }); break;
+    case 'INSERT': Object.assign(common, { name: readString(pairs, 2), blockName: readString(pairs, 2), insertionPoint: readPoint(pairs, 10, 20, 30), rotation: degreesToRadiansSafe(readNumber(pairs, 50)), scale: { x: readNumber(pairs, 41) ?? 1, y: readNumber(pairs, 42) ?? readNumber(pairs, 41) ?? 1, z: readNumber(pairs, 43) ?? 1 } }); break;
+    case 'SOLID':
+    case 'TRACE':
+    case '3DFACE': Object.assign(common, { vertices: [readPoint(pairs, 10, 20, 30), readPoint(pairs, 11, 21, 31), readPoint(pairs, 12, 22, 32), readPoint(pairs, 13, 23, 33)].filter(Boolean) }); break;
+  }
+  return normalizeDxfEntity(common);
+}
+
+function readNumber(pairs: DxfPair[], code: number): number | undefined {
+  const found = pairs.find((pair) => pair.code === code)?.value;
+  const n = Number(found);
+  return Number.isFinite(n) ? n : undefined;
+}
+function readString(pairs: DxfPair[], code: number): string | undefined {
+  const found = pairs.find((pair) => pair.code === code)?.value;
+  return found && found.length > 0 ? found : undefined;
+}
+function readPoint(pairs: DxfPair[], xCode: number, yCode: number, zCode: number): CadPoint3D | undefined {
+  const x = readNumber(pairs, xCode);
+  const y = readNumber(pairs, yCode);
+  const z = readNumber(pairs, zCode);
+  if (x === undefined || y === undefined) return undefined;
+  return z === undefined ? { x, y } : { x, y, z };
+}
+function readRepeatedPoints(pairs: DxfPair[], xCode: number, yCode: number, zCode: number): CadPoint3D[] {
+  const out: CadPoint3D[] = [];
+  for (let i = 0; i < pairs.length; i++) {
+    if (pairs[i].code !== xCode) continue;
+    const x = Number(pairs[i].value);
+    const yPair = pairs.slice(i + 1).find((pair) => pair.code === yCode);
+    const zPair = pairs.slice(i + 1).find((pair) => pair.code === zCode);
+    const y = Number(yPair?.value);
+    const z = Number(zPair?.value);
+    if (Number.isFinite(x) && Number.isFinite(y)) out.push(Number.isFinite(z) ? { x, y, z } : { x, y });
+  }
+  return out;
+}
+function readLwPolylineVertices(pairs: DxfPair[]): Array<CadPoint3D & { bulge?: number }> {
+  const out: Array<CadPoint3D & { bulge?: number }> = [];
+  for (let i = 0; i < pairs.length; i++) {
+    if (pairs[i].code !== 10) continue;
+    const x = Number(pairs[i].value);
+    let y: number | undefined;
+    let bulge: number | undefined;
+    for (let j = i + 1; j < pairs.length; j++) {
+      if (pairs[j].code === 10) break;
+      if (pairs[j].code === 20) y = Number(pairs[j].value);
+      if (pairs[j].code === 42) bulge = Number(pairs[j].value);
+    }
+    if (Number.isFinite(x) && Number.isFinite(y)) out.push({ x, y: y as number, bulge: Number.isFinite(bulge) ? bulge : undefined });
+  }
+  return out;
+}
+function readJoinedText(pairs: DxfPair[]): string | undefined {
+  const chunks = pairs.filter((pair) => pair.code === 1 || pair.code === 3).map((pair) => pair.value);
+  return chunks.length ? chunks.join('') : undefined;
+}
+
+function degreesToRadiansSafe(value: number | undefined): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? degreesToRadians(value) : undefined;
+}
+

@@ -1,0 +1,73 @@
+import { CadCanvasRenderer, computeCadDocumentBounds, type CadDocument, type CadShxGlyphResolver } from './vendor/cad/index';
+import { viewportScene, type DrawingSheet } from './drawing-spaces';
+
+export class PaperView {
+  readonly canvas=document.createElement('canvas');
+  private scratch=document.createElement('canvas');
+  private renderer:CadCanvasRenderer;
+  private observer:ResizeObserver;
+  private doc?:CadDocument;
+  private sheet?:DrawingSheet;
+  private view={centerX:0,centerY:0,scale:1};
+  private referenceScale=1;
+  private drag?:{id:number;x:number;y:number};
+  private rendering=false;
+  private frame=0;
+  private host:HTMLElement;
+  onView?:(percent:number)=>void;
+  constructor(host:HTMLElement,resolver:CadShxGlyphResolver){
+    this.host=host;this.canvas.style.cssText='display:block;width:100%;height:100%;touch-action:none';this.canvas.setAttribute('aria-label','Presentación CAD. Arrastra para desplazar y usa la rueda para acercar.');host.append(this.canvas);
+    this.scratch.style.cssText='position:fixed;left:-100000px;top:0;visibility:hidden;pointer-events:none';document.body.append(this.scratch);
+    this.renderer=new CadCanvasRenderer(this.scratch,{background:'#ffffff',transparentBackground:true,foreground:'#111111',contrastMode:'adaptive',showPageBounds:false,showUnsupportedMarkers:false,shxGlyphResolver:resolver});
+    this.renderer.onStats=()=>{if(!this.rendering)this.queueDraw();};
+    this.canvas.onpointerdown=e=>{if(e.button!==0)return;this.drag={id:e.pointerId,x:e.clientX,y:e.clientY};this.canvas.setPointerCapture(e.pointerId);};
+    this.canvas.onpointermove=e=>{const d=this.drag;if(!d||d.id!==e.pointerId)return;this.view.centerX-=(e.clientX-d.x)/this.view.scale;this.view.centerY+=(e.clientY-d.y)/this.view.scale;d.x=e.clientX;d.y=e.clientY;this.queueDraw();};
+    this.canvas.onpointerup=this.canvas.onpointercancel=this.canvas.onlostpointercapture=()=>{this.drag=undefined;};
+    this.canvas.addEventListener('wheel',e=>{e.preventDefault();this.zoom(Math.exp(-Math.max(-200,Math.min(200,e.deltaY))*.002));},{passive:false});
+    this.observer=new ResizeObserver(()=>this.queueDraw());this.observer.observe(host);
+  }
+  setSheet(doc:CadDocument,sheet:DrawingSheet,fit=true){this.doc=doc;this.sheet=sheet;if(fit)this.fit();else this.draw();}
+  fit(){
+    const s=this.sheet;if(!s||!this.doc)return;
+    const bounds=s.width&&s.height?{minX:s.origin.x,minY:s.origin.y,maxX:s.origin.x+s.width,maxY:s.origin.y+s.height}:computeCadDocumentBounds({...this.doc,entities:s.entities.filter(e=>e.type!=='VIEWPORT'),savedView:undefined,pages:undefined});
+    const valid=Number.isFinite(bounds.minX+bounds.minY+bounds.maxX+bounds.maxY);
+    const b=valid?bounds:{minX:0,minY:0,maxX:1,maxY:1};
+    this.view={centerX:(b.minX+b.maxX)/2,centerY:(b.minY+b.maxY)/2,scale:Math.min(this.host.clientWidth/Math.max(b.maxX-b.minX,1e-6),this.host.clientHeight/Math.max(b.maxY-b.minY,1e-6))*.88};
+    this.referenceScale=this.view.scale;this.draw();
+  }
+  zoom(factor:number){this.view.scale=Math.max(1e-8,Math.min(1e8,this.view.scale*factor));this.draw();}
+  private queueDraw(){if(!this.frame)this.frame=requestAnimationFrame(()=>{this.frame=0;this.draw();});}
+  private screen(p:{x:number;y:number}){return{x:this.host.clientWidth/2+(p.x-this.view.centerX)*this.view.scale,y:this.host.clientHeight/2-(p.y-this.view.centerY)*this.view.scale};}
+  draw(){
+    const doc=this.doc,s=this.sheet,width=this.host.clientWidth,height=this.host.clientHeight;if(!doc||!s||!width||!height)return;
+    this.rendering=true;
+    try{
+      const dpr=Math.min(devicePixelRatio||1,2);this.canvas.width=Math.round(width*dpr);this.canvas.height=Math.round(height*dpr);
+      const ctx=this.canvas.getContext('2d')!;ctx.scale(dpr,dpr);ctx.fillStyle=s.width&&s.height?'#626a77':'#ffffff';ctx.fillRect(0,0,width,height);
+      this.scratch.style.width=`${width}px`;this.scratch.style.height=`${height}px`;this.renderer.resize();
+      const paperScale=this.view.scale/(s.units==='in'?25.4:1);
+      this.renderer.setOptions({paperScale,background:'#ffffff',transparentBackground:true,foreground:'#111111'});
+      ctx.save();
+      if(s.width&&s.height){const p=this.screen({x:s.origin.x,y:s.origin.y+s.height});ctx.fillStyle='#fff';ctx.fillRect(p.x,p.y,s.width*this.view.scale,s.height*this.view.scale);ctx.beginPath();ctx.rect(p.x,p.y,s.width*this.view.scale,s.height*this.view.scale);ctx.clip();}
+      for(const v of s.viewports){
+        if(v.warning)continue;
+        const source=s.entities.find(e=>String(e.handle??e.viewportId??'')===v.id),layer=doc.layers[source?.layer??'0'];
+        if(source?.isVisible===false||layer?.isVisible===false||layer?.isFrozen)continue;
+        const c=this.screen(v.center),w=v.width*this.view.scale,h=v.height*this.view.scale;
+        ctx.save();ctx.beginPath();
+        if(v.clip){v.clip.forEach((p,i)=>{const q=this.screen(p);if(i)ctx.lineTo(q.x,q.y);else ctx.moveTo(q.x,q.y);});ctx.closePath();}else ctx.rect(c.x-w/2,c.y-h/2,w,h);
+        ctx.clip();
+        const layers=Object.fromEntries(Object.entries(doc.layers).map(([key,l])=>[key,{...l,isVisible:l.isVisible!==false&&!v.frozenLayers.includes(l.name)&&!v.frozenLayers.includes(String((l.raw as any)?.handle??'').toUpperCase())}]));
+        const scene={...doc,entities:doc.entities,layers,pages:undefined,savedView:{source:'vport' as const,twistAngle:0,sceneTransformApplied:true,sceneTransform:viewportScene(v)},metadata:{...doc.metadata,sceneTransformApplied:false}};
+        this.renderer.setDocument(scene);
+        this.renderer.setViewState({centerX:v.viewCenter.x,centerY:v.viewCenter.y,scale:this.view.scale*v.height/v.viewHeight});
+        ctx.drawImage(this.scratch,c.x-width/2,c.y-height/2,width,height);ctx.restore();
+      }
+      const paper={...doc,entities:s.entities.filter(e=>e.type!=='VIEWPORT'),pages:undefined,savedView:undefined,metadata:{...doc.metadata,sceneTransformApplied:true}};
+      this.renderer.setDocument(paper);this.renderer.setViewState(this.view);ctx.drawImage(this.scratch,0,0,width,height);ctx.restore();
+      if(s.width&&s.height){const p=this.screen({x:s.origin.x,y:s.origin.y+s.height});ctx.strokeStyle='#252b36';ctx.lineWidth=1;ctx.strokeRect(p.x,p.y,s.width*this.view.scale,s.height*this.view.scale);}
+      this.onView?.(Math.round(this.view.scale/this.referenceScale*100));
+    }finally{this.rendering=false;}
+  }
+  destroy(){this.observer.disconnect();if(this.frame)cancelAnimationFrame(this.frame);this.renderer.destroy();this.scratch.remove();this.canvas.remove();}
+}

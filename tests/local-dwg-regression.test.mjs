@@ -32,3 +32,4 @@ test('DWG privados: encuadre y geometría visible', {skip:!existsSync(config),ti
     }
   }finally{await app.close();}
 });
+

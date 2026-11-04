@@ -73,3 +73,4 @@ test('seleccionar, medir con snap, dibujar y exportar trazos', {timeout:90000},a
     assert.deepEqual(errors,[]);
   }finally{await app.close();}
 });
+
