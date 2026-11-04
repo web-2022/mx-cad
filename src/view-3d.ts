@@ -68,3 +68,4 @@ export class View3D {
   }
   destroy(){this.observer.disconnect();this.canvas.remove();}
 }
+

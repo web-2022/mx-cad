@@ -1,4 +1,4 @@
-import type { CadBounds, CadDocument, CadPoint2D } from '@flyfish-dev/cad-viewer';
+import type { CadBounds, CadDocument, CadPoint2D } from './vendor/cad/index';
 import type { Shape } from './geometry';
 
 export interface DrawingRegion extends CadBounds { count: number }
@@ -45,3 +45,4 @@ export function preferredRegion(doc:CadDocument,regions:DrawingRegion[]):number 
     if(d<score){score=d;best=i;}
   });return best;
 }
+

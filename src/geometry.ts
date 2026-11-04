@@ -1,4 +1,4 @@
-import type { CadDocument, CadEntity, CadPoint3D } from '@flyfish-dev/cad-viewer';
+import type { CadDocument, CadEntity, CadPoint3D } from './vendor/cad/index';
 export type Point = CadPoint3D;
 export interface Shape { id: string; type: string; layer: string; points: Point[]; nodes: Point[]; closed: boolean; origin: 'Plano' | 'Sesión'; approximate?: boolean }
 export const distance = (a: Point, b: Point) => Math.hypot(b.x-a.x,b.y-a.y);
@@ -70,3 +70,4 @@ export function shapesFromDocument(doc: CadDocument): Shape[] {
   }
   walk(doc.entities,p=>({...p}));return out;
 }
+

@@ -28,3 +28,4 @@ test('canvas fits, draws, changes views and releases its observer',()=>{
   assert.equal(view.setShapes([]),0);
   view.destroy();assert.equal(disconnected,true);
 });
+

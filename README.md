@@ -48,3 +48,24 @@ Este proyecto usa [@flyfish-dev/cad-viewer](https://github.com/flyfish-dev/cad-v
 ## Vista 3D
 
 Abre un DXF o DWG y pulsa **3D**. Arrastra para girar, usa **Mayúsculas + arrastrar** para desplazar y la rueda o los botones +/− para acercar. El selector cambia entre isométrica, superior y frontal. Las capas controlan también la vista 3D y **Exportar PNG** guarda la vista actual. Pulsa **2D** para volver a las herramientas de dibujo. Los trazos de sesión permanecen en la vista 2D.
+
+
+## Model y presentaciones
+
+Al abrir DWG o DXF, las pestañas **Model** y los nombres de las presentaciones aparecen sobre el visor. Cada hoja agrupa sus entidades por nombre de Layout o propietario BLOCK_RECORD; no se mezclan las entidades de papel con el modelo. La vista 3D y los trazos de sesión corresponden a Model.
+
+Las hojas representan el tamaño y las unidades recuperados del archivo, sus entidades y cajetines, y las ventanas ortográficas superiores del modelo, con escala, giro, recorte rectangular o poligonal recto y capas congeladas disponibles. Si falta el tamaño, se informa y se ajusta al contenido sin asumir A4/A3. Los patrones hatch y sus islas, colores, transparencia explícita y grosores disponibles se representan en Canvas. Los límites curvos se discretizan y las tramas demasiado densas se simplifican a resolución de pantalla.
+
+**Cargar imágenes, fuentes o Xrefs** permite aportar PNG/JPEG/WebP/BMP, SHX, TTF/OTF y archivos DWG/DXF externos desde el equipo. Se vinculan por nombre, nunca se descargan automáticamente desde las rutas del dibujo. Se muestran los nombres de los recursos que faltan. La exportación PNG guarda la presentación y el encuadre seleccionados.
+
+### Límites de fidelidad
+
+No es un motor de impresión AutoCAD. No reproduce completamente CTB/STB, overrides gráficos de viewport, escalas anotativas, texto MTEXT enriquecido, bigfonts ni imágenes recortadas. Los viewports en perspectiva o inclinados y los recortes curvos no compatibles se omiten con aviso; no se sustituyen por una ventana rectangular inventada. Las splines hatch no recuperables se señalan. Las cotas usan su bloque gráfico cuando existe; si falta, no se reconstruye automáticamente todo DIMSTYLE. Los sólidos ACIS, objetos proxy y algunas referencias pueden seguir incompletos.
+
+El control **Avisos del dibujo** distingue recursos ausentes y representaciones aproximadas o no compatibles. Para verificar fidelidad con planos de producción, compare una hoja con su PDF de referencia de AutoCAD.
+
+### Motor local y pruebas
+
+Se conserva una copia identificada del motor AGPL en `src/vendor/cad` para corregir la extracción y el renderizado: ver `src/vendor/cad/UPSTREAM.md`. No hay servicios externos ni dependencias de pago. Vite empaqueta el worker modificado y usa los recursos WASM del paquete fijado.
+
+La suite añade separación de espacios, tamaños de hoja, transformación de viewports, límites hatch, apertura de un DXF con varias hojas y un DWG público real, exportación y carga de imágenes locales. Las pruebas Electron requieren la compilación y una plataforma con Electron.

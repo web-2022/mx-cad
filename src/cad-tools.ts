@@ -1,5 +1,5 @@
-import type { CadViewer } from '@flyfish-dev/cad-viewer';
-import { colorFromAci } from '@flyfish-dev/cad-viewer';
+import type { CadViewer } from './vendor/cad/index';
+import { colorFromAci } from './vendor/cad/index';
 import { closest, contains, distance, metrics, segments, shapesFromDocument, validPolygon, type Point, type Shape } from './geometry';
 
 type Mode='select'|'pan'|'measure'|'line'|'polygon';
@@ -154,4 +154,5 @@ export class CadTools {
     out.push(0,'ENDSEC',0,'EOF');const url=URL.createObjectURL(new Blob([out.join('\n')+'\n'],{type:'application/dxf'}));const a=document.createElement('a');a.href=url;a.download='mx-cad-trazos.dxf';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
   }
 }
+
 

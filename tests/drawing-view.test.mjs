@@ -19,3 +19,4 @@ test('no divide un dibujo continuo y no depende del zoom microscópico guardado'
   assert.equal(regions.length,1);assert.equal(regions[0].count,100);assert.ok(regions[0].maxX>90);
   assert.deepEqual(drawingRegions([]),[]);
 });
+
