@@ -8,6 +8,8 @@ Aplicación de escritorio para Windows que permite visualizar planos **DWG y DXF
 
 - Abrir un archivo o arrastrarlo al visor.
 - Vista 2D con zoom, desplazamiento y ajuste a pantalla.
+- Vista 3D alámbrica de líneas, puntos, arcos y polilíneas compatibles, con coordenadas Z originales.
+- Giro, desplazamiento, zoom y vistas isométrica, superior y frontal en 3D.
 - Buscar capas y activar o desactivar su visualización.
 - Exportar la vista actual a PNG.
 - Plano DXF de ejemplo incluido.
@@ -30,7 +32,7 @@ Atajos: **Ctrl+O** abre un plano y **F** ajusta la vista. La rueda hace zoom y a
 
 ## Compatibilidad
 
-Es un visor de solo lectura y vista 2D, no un editor ni un sustituto completo de AutoCAD. La compatibilidad DWG depende de LibreDWG. Las entidades propietarias, objetos 3D, referencias externas y fuentes ausentes pueden generar una vista parcial. No se garantiza fidelidad de todas las versiones de DWG/DXF. No se modifica el archivo original. Los cambios de visibilidad de capas afectan únicamente a la vista.
+Es un visor con vista 2D y vista 3D alámbrica, no un editor ni un sustituto completo de AutoCAD. La compatibilidad DWG depende de LibreDWG. La vista 3D utiliza la geometría que entrega el lector: un plano sin alturas Z permanece plano. No reconstruye volúmenes ni renderiza sólidos ACIS o mallas. Las entidades propietarias, otros objetos 3D, referencias externas y fuentes ausentes pueden generar una vista parcial. No se garantiza fidelidad de todas las versiones de DWG/DXF. No se modifica el archivo original. Los cambios de visibilidad de capas afectan únicamente a la vista.
 
 ## Pruebas
 
@@ -41,3 +43,8 @@ También se probó la apertura de `example_2000.dwg` de [LibreDWG](https://githu
 ## Motor y licencia
 
 Este proyecto usa [@flyfish-dev/cad-viewer](https://github.com/flyfish-dev/cad-viewer), bajo AGPL-3.0-only, y su lector DWG basado en [LibreDWG WebAssembly](https://github.com/mlightcad/libredwg-web). MX CAD se distribuye bajo **AGPL-3.0-only**. Las dependencias conservan sus licencias respectivas; ver `THIRD_PARTY_NOTICES.md`.
+
+
+## Vista 3D
+
+Abre un DXF o DWG y pulsa **3D**. Arrastra para girar, usa **Mayúsculas + arrastrar** para desplazar y la rueda o los botones +/− para acercar. El selector cambia entre isométrica, superior y frontal. Las capas controlan también la vista 3D y **Exportar PNG** guarda la vista actual. Pulsa **2D** para volver a las herramientas de dibujo. Los trazos de sesión permanecen en la vista 2D.

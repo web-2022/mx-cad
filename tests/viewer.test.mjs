@@ -22,6 +22,16 @@ test('DXF local: abrir, capas, zoom, PNG y archivo inválido', { timeout: 90000 
     assert.equal(await page.locator('#stat-files').textContent(), '1');
     assert.equal(await page.locator('#stat-entities').textContent(), '46');
     console.log('DXF y capas cargados');
+    await page.locator('#view-3d').click();
+    assert.equal(await page.locator('#viewer-3d').isVisible(),true);
+    assert.equal(await page.locator('#viewer').isVisible(),false);
+    await page.locator('#view-3d-preset').selectOption('front');
+    await page.locator('#fit').click();
+    await page.locator('#plus').click();
+    await page.locator('#viewer-3d canvas').dispatchEvent('wheel',{deltaY:50});
+    await page.locator('#view-2d').click();
+    assert.equal(await page.locator('#viewer').isVisible(),true);
+    assert.equal(await page.locator('#view-3d-preset').isVisible(),false);
     const layer = page.getByRole('checkbox', { name: 'Mostrar capa MUROS', exact: true });
     await layer.uncheck(); assert.equal(await layer.isChecked(), false); await layer.check();
     const before = await page.locator('#coordinates').textContent(); await page.locator('#plus').click();
@@ -71,3 +81,4 @@ test('DXF local: abrir, capas, zoom, PNG y archivo inválido', { timeout: 90000 
     await page.screenshot({path:'test-results/mx-cad-movil.png'});
   } finally { await app.close(); }
 });
+

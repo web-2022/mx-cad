@@ -1,6 +1,7 @@
 import { CadViewer, type CadDocument } from '@flyfish-dev/cad-viewer';
 import '@flyfish-dev/cad-viewer/style.css';
 import './style.css';
+import { View3D } from './view-3d';
 import { LayerAwareDxfLoader } from './dxf-loader';
 
 import { layout } from './layout';
@@ -12,6 +13,8 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = layout;
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 let active = false;
+let is3D = false;
+let view3D: View3D | undefined;
 let controller: AbortController | undefined;
 let documentModel: CadDocument | undefined;
 let currentName = '';
@@ -22,6 +25,7 @@ let regions: DrawingRegion[] = [];
 let regionIndex = 0;
 let zoomReferenceScale: number | undefined;
 function fitDrawing() {
+  if(is3D){view3D?.fit();return;}
   const region = regions[regionIndex];
   if (!region) { zoomReferenceScale=undefined;viewer.fit('extents');zoomReferenceScale=viewer.renderer.getViewState().scale;el('zoom-label').textContent='100%';el('coordinates').textContent='ZOOM 100%  •  LOCAL';return; }
   const width = Math.max(region.maxX-region.minX, 1e-6), height = Math.max(region.maxY-region.minY, 1e-6);
@@ -56,8 +60,35 @@ const viewer = new CadViewer({
   onViewChange(event) { const zoom = Math.round(zoomReferenceScale ? event.view.scale / zoomReferenceScale * 100 : event.zoomPercent); el('coordinates').textContent = `ZOOM ${zoom}%  •  LOCAL`; el('zoom-label').textContent = `${zoom}%`; tools?.redraw(); }
 });
 
+function setView3D(enabled: boolean) {
+  if(enabled && !documentModel)return;
+  if(enabled && !view3D)view3D=new View3D(el('viewer-3d'));
+  is3D=enabled;
+  el('viewport').dataset.view3d=String(enabled);
+  document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command').forEach(n=>n.hidden=enabled);
+  el('viewer').hidden=enabled;
+  el('viewer-3d').hidden=!enabled;
+  el('view-3d-preset').hidden=!enabled;
+  el('view-2d').setAttribute('aria-pressed',String(!enabled));
+  el('view-3d').setAttribute('aria-pressed',String(enabled));
+  el('mode-badge').textContent=enabled?'TÉCNICO · VISTA 3D':'TÉCNICO · VISTA 2D';
+  el('prop-view').textContent=enabled?'3D / alámbrica':'Superior / 2D';
+  el('view-label').textContent=enabled?'3D · COORDENADAS ORIGINALES':'SUPERIOR | 2D';
+  el('view-hint').textContent=enabled?'Arrastrar: girar · Mayús + arrastrar: desplazar · Rueda: zoom':'Rueda: zoom · Arrastrar: desplazar';
+  const dock=document.querySelector<HTMLElement>('.cad-dock');
+  if(dock){dock.hidden=enabled;dock.inert=enabled;}
+  el('drawing-region').hidden=enabled||regions.length<2;
+  if(enabled){
+    const count=view3D!.setShapes(shapesFromDocument(documentModel!));
+    notice(count?'Vista 3D de líneas y polilíneas. Los objetos no compatibles y los sólidos pueden no aparecer. Un plano sin cotas Z permanece plano.':'Este archivo no contiene líneas o polilíneas compatibles con la vista 3D.',!count);
+  }else viewer.resize();
+}
+el('view-2d').onclick=()=>setView3D(false);
+el('view-3d').onclick=()=>setView3D(true);
+el('view-3d-preset').onchange=()=>view3D?.preset(el<HTMLSelectElement>('view-3d-preset').value);
+
 function controls() {
-  (document.querySelector('.cad-dock') as HTMLElement | null)?.toggleAttribute('inert', !!controller);
+  (document.querySelector('.cad-dock') as HTMLElement | null)?.toggleAttribute('inert', !!controller || is3D);
   document.querySelector<HTMLElement>('.sidebar')!.inert = !!controller;
   document.querySelectorAll<HTMLButtonElement>('[data-drawing]').forEach(b => b.disabled = !active || !!controller);
   el<HTMLButtonElement>('clear').disabled = !!controller;
@@ -124,6 +155,7 @@ function renderLayers() {
         viewer.renderer.setDocument(documentModel);
         viewer.renderer.setViewState(state);
       }
+      if(is3D && documentModel)view3D?.setShapes(shapesFromDocument(documentModel),false);
       tools?.refresh();
     };
     if (layer.name === activeLayer) row.classList.add('active-layer');
@@ -142,6 +174,7 @@ async function open(file: File) {
     const result = await viewer.loadFile(file, { signal: controller.signal });
     sessionLayers.clear(); activeLayer = 'MX_TRAZOS'; el('layer-error').hidden = true;
     documentModel = viewer.renderer.getSourceDocument(); active = true; currentName = file.name;
+    setView3D(false);
     tools?.reset();
     prepareRegions();
     el('empty').hidden = true;
@@ -161,7 +194,7 @@ const selectFile = () => { if (!controller) input.click(); };
 el('open').onclick = selectFile; el('open-empty').onclick = selectFile;
 input.onchange = () => { const file = input.files?.[0]; input.value = ''; if (file) void open(file); };
 el('cancel').onclick = () => controller?.abort();
-el('plus').onclick = () => viewer.zoomIn(); el('minus').onclick = () => viewer.zoomOut(); el('fit').onclick = () => fitDrawing();
+el('plus').onclick = () => is3D ? view3D?.zoom(1.25) : viewer.zoomIn(); el('minus').onclick = () => is3D ? view3D?.zoom(.8) : viewer.zoomOut(); el('fit').onclick = () => fitDrawing();
 el('drawing-region').onchange = () => { regionIndex=Number(el<HTMLSelectElement>('drawing-region').value);fitDrawing(); };
 el('search').oninput = renderLayers;
 el('active-layer').onchange = () => { activeLayer = el<HTMLSelectElement>('active-layer').value; renderLayers(); };
@@ -175,6 +208,7 @@ el('new-layer-form').onsubmit = e => {
 };
 el('clear').onclick = () => {
   if (controller) return;
+  setView3D(false);
   zoomReferenceScale=undefined;viewer.clear(); active = false; documentModel = undefined; currentName = '';
   sessionLayers.clear(); activeLayer = 'MX_TRAZOS'; el('layer-error').hidden = true;
   tools?.reset();
@@ -191,6 +225,7 @@ el('panel-toggle').onclick = () => {
   requestAnimationFrame(() => viewer.resize());
 };
 function setBackground(light: boolean) {
+  view3D?.background(light);
   viewer.setCanvasOptions({ background: light ? '#f4f5f7' : '#111d31', foreground: light ? '#192844' : '#e4ebf3' });
   document.querySelector('.shell')!.classList.toggle('light-view', light);
   el('background-dark').setAttribute('aria-pressed', String(!light)); el('background-light').setAttribute('aria-pressed', String(light));
@@ -207,7 +242,7 @@ el<HTMLInputElement>('shx-input').onchange=async e=>{
 };
 el('export').onclick = async () => {
   try {
-    const canvas = await tools!.composite(await viewer.captureCanvas());
+    const canvas = is3D ? view3D!.canvas : await tools!.composite(await viewer.captureCanvas());
     const link = document.createElement('a'); link.href = canvas.toDataURL('image/png'); link.download = currentName.replace(/\.(dwg|dxf)$/i, '') + '.png'; document.body.append(link); link.click(); link.remove();
   } catch (error) { notice(`No se pudo exportar la vista: ${String(error)}`, true); }
 };
@@ -229,4 +264,5 @@ tools = new CadTools(viewer, {
   layers: () => [...sessionLayers.values()],
   created: name => { if (!layersForView().some(layer => layer.name === name)) sessionLayers.set(name, { name, color: '#f39c1c', isVisible: true }); renderLayers(); }
 });
-window.addEventListener('beforeunload', () => viewer.destroy()); controls();
+window.addEventListener('beforeunload', () => {view3D?.destroy();viewer.destroy();}); controls();
+

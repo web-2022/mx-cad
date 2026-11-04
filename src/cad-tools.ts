@@ -29,22 +29,26 @@ export class CadTools {
     document.getElementById('undo-drawing')!.onclick=()=>{if(this.pending.length)this.pending.pop();else{const removed=this.drawings.pop();if(removed===this.selected)this.select();}this.redraw();this.sync();};
     document.getElementById('save-drawings')!.onclick=()=>this.download();
     this.viewport.addEventListener('pointerdown',e=>{
+      if(this.viewport.dataset.view3d==='true')return;
       if(!(e.target instanceof HTMLCanvasElement))return;
       this.down={x:e.clientX,y:e.clientY};
       if(e.button===0&&this.mode!=='pan'&&this.mode!=='select'){e.preventDefault();e.stopImmediatePropagation();}
     },true);
     this.viewport.addEventListener('pointerup',e=>{
+      if(this.viewport.dataset.view3d==='true')return;
       if(e.button!==0||!this.down||Math.hypot(e.clientX-this.down.x,e.clientY-this.down.y)>4)return;
       if(!(e.target instanceof HTMLCanvasElement))return;
       this.down=undefined;this.click(this.pointer(e));
     },true);
     this.viewport.addEventListener('pointermove',e=>{
+      if(this.viewport.dataset.view3d==='true')return;
       if(this.frame)return;
       const raw=this.pointer(e);
       this.frame=requestAnimationFrame(()=>{this.frame=0;this.cursor=this.snap(raw);this.redraw();});
     });
     this.viewport.addEventListener('pointerleave',()=>{this.snapped=undefined;this.cursor=undefined;this.redraw();});
     window.addEventListener('keydown',e=>{
+      if(this.viewport.dataset.view3d==='true')return;
       if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement)return;
       if(e.key==='Escape'){this.pending=[];this.select();this.setMode('select');}
       if(e.key==='Enter'&&this.mode==='polygon'){e.preventDefault();this.finish();}
@@ -150,3 +154,4 @@ export class CadTools {
     out.push(0,'ENDSEC',0,'EOF');const url=URL.createObjectURL(new Blob([out.join('\n')+'\n'],{type:'application/dxf'}));const a=document.createElement('a');a.href=url;a.download='mx-cad-trazos.dxf';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
   }
 }
+
