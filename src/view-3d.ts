@@ -4,7 +4,7 @@ export function projectPoint(p: Point, center: Point, yaw: number, pitch: number
   const x=p.x-center.x, y=p.y-center.y, z=(p.z??0)-(center.z??0);
   const horizontal=x*Math.cos(yaw)-y*Math.sin(yaw);
   const depth=x*Math.sin(yaw)+y*Math.cos(yaw);
-  return {x:horizontal,y:depth*Math.sin(pitch)-z*Math.cos(pitch)};
+  return {x:horizontal,y:depth*Math.sin(pitch)+z*Math.cos(pitch)};
 }
 
 // Orthographic wireframe: preserve model coordinates without uploading files.

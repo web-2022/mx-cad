@@ -62,7 +62,7 @@ const viewer = new CadViewer({
 
 function setView3D(enabled: boolean) {
   if(enabled && !documentModel)return;
-  if(enabled && !view3D)view3D=new View3D(el('viewer-3d'));
+  if(enabled && !view3D){view3D=new View3D(el('viewer-3d'));view3D.background(document.querySelector('.shell')!.classList.contains('light-view'));}
   is3D=enabled;
   el('viewport').dataset.view3d=String(enabled);
   document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command').forEach(n=>n.hidden=enabled);
