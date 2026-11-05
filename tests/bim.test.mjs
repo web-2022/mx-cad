@@ -10,7 +10,7 @@ test('local GLB, glTF companions and IFC: geometry, properties, visibility, PNG 
     page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(/^https?:/.test(r.url())&&!/^http:\/\/(127\.0\.0\.1|localhost)(:|\/)/.test(r.url()))remote.push(r.url());});
     await page.locator('#file-input').setInputFiles('tests/fixtures/model.glb');
     await expect(page.locator('#status')).toContainText('GLB · 1 elementos');
-    assert.equal(await page.locator('#viewer-bim').isVisible(),true);
+    await expect(page.locator('#viewer-bim')).toBeVisible();
     await page.locator('#notice').click();
     await expect.poll(()=>page.locator('.bim-stage canvas').evaluate(canvas=>{
       const gl=canvas.getContext('webgl2'),pixel=new Uint8Array(4);gl.readPixels(Math.floor(canvas.width/2),Math.floor(canvas.height/2),1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);return pixel[0]>60&&pixel[0]>pixel[1];
