@@ -359,3 +359,12 @@ window.addEventListener('beforeunload', () => {bim?.destroy();view3D?.destroy();
 
 
 
+
+if(location.hostname==='127.0.0.1'&&new URLSearchParams(location.search).get('benchmark')==='1'){
+  (window as any).mxCadBenchmark={
+    zoom:(f:number)=>selectedSheet?paperView!.zoom(f):viewer.renderer.zoom(f),
+    pan:(dx:number,dy:number)=>{if(selectedSheet){const v=(paperView as any).view;v.centerX-=dx/v.scale;v.centerY+=dy/v.scale;paperView!.draw();}else viewer.renderer.panByScreenDelta(dx,dy);},
+    sheet:(i:number)=>selectSpace(sheetsOf(documentModel)[i].id),
+    canvas:()=>selectedSheet?paperView!.canvas:viewer.canvas
+  };
+}
