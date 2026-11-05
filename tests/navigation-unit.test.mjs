@@ -1,0 +1,10 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {NavigationHistory} from '../src/navigation-history.ts';
+import {ShapeIndex} from '../src/shape-index.ts';
+import {solidVertices} from '../src/solid-order.ts';
+import {separateDrawingSpaces,sheetsOf} from '../src/drawing-spaces.ts';
+test('layout association via block layoutHandle retains the authored sheet name',()=>{const doc={layers:{},blocks:{},entities:[{type:'TEXT',handle:'5',ownerBlockRecordHandle:'21',isInPaperSpace:true}],metadata:{}};separateDrawingSpaces(doc,[{handle:'A',layoutName:'Plano Norte',paperWidth:420,paperHeight:297,paperUnits:1}],[{handle:'21',name:'*Paper_Space',layoutHandle:'A'}]);assert.equal(sheetsOf(doc).length,1);assert.equal(sheetsOf(doc)[0].name,'Plano Norte');assert.equal(sheetsOf(doc)[0].entities.length,1);assert.equal(doc.entities.length,0);});
+test('previous views are copied, bounded and isolated by file and space',()=>{const h=new NavigationHistory(),s={scale:1};h.push('a:model',s);s.scale=2;h.push('a:sheet',{scale:3});assert.deepEqual(h.pop('a:model'),{scale:1});assert.deepEqual(h.pop('a:sheet'),{scale:3});assert.equal(h.pop('b:model'),undefined);for(let i=0;i<80;i++)h.push('x',{i});let count=0;while(h.pop('x'))count++;assert.equal(count,40);h.clear();assert.equal(h.has('x'),false);});
+test('spatial candidates preserve long lines, polygon interiors and survey coordinates',()=>{const shapes=Array.from({length:10000},(_,i)=>({id:String(i),points:[{x:500000+i%100,y:9000000+Math.floor(i/100)}]}));const wide={id:'wide',points:[{x:0,y:0},{x:600000,y:9100000}]};const index=new ShapeIndex([...shapes,wide]);const result=index.query(500050,9000050,.2);assert.ok(result.includes(shapes[5050]));assert.ok(result.includes(wide));assert.equal(new Set(result).size,result.length);});
+test('SOLID and TRACE follow DXF corner order; 3DFACE stays ordered',()=>{assert.deepEqual(solidVertices('SOLID',[0,1,2,3]),[0,1,3,2]);assert.deepEqual(solidVertices('TRACE',[0,1,2,3]),[0,1,3,2]);assert.deepEqual(solidVertices('3DFACE',[0,1,2,3]),[0,1,2,3]);});

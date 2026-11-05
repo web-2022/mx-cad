@@ -58,6 +58,7 @@ export function separateDrawingSpaces(doc: CadDocument, layouts: Record<string, 
     let sheet=byOwner.get(handle(b.handle));
     if(!sheet&&b.layoutHandle)sheet=sheets.find(s=>s.id===handle(b.layoutHandle));
     if(!sheet){sheet={id:`block-${handle(b.handle)||b.name}`,name:String(b.layoutName??b.name),order:sheets.length,blockHandle:handle(b.handle),units:'unknown',origin:{x:0,y:0},rotation:0,entities:[],viewports:[],warnings:['El lector no proporcionó el nombre o la configuración de papel de este bloque de presentación.']};sheets.push(sheet);byOwner.set(handle(b.handle),sheet);}
+    byOwner.set(handle(b.handle),sheet);byName.set(sheet.name.toLowerCase(),sheet);
     const normalized=doc.blocks[String(b.name)]?.entities??[];
     const seen=new Set(root.map(e=>e.handle).filter(Boolean));
     for(const e of normalized)if(!e.handle||!seen.has(e.handle)){root.push({...e,ownerBlockRecordHandle:handle(b.handle),isInPaperSpace:true});if(e.handle)seen.add(e.handle);}

@@ -1,3 +1,4 @@
+import {Navigation,type NavigationAdapter} from './navigation';
 import type {BimViewer} from './bim-viewer';
 import { PaperView } from './paper-view';
 import { sheetsOf, type DrawingSheet } from './drawing-spaces';
@@ -17,6 +18,8 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = layout;
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 let active = false;
+let navigation:Navigation|undefined;
+let fileRevision=0;
 let bim:BimViewer|undefined;
 let bimHost:HTMLElement|undefined;
 let is3D = false;
@@ -88,16 +91,17 @@ function setView3D(enabled: boolean) {
   el('view-label').textContent=enabled?'3D · COORDENADAS ORIGINALES':'SUPERIOR | 2D';
   el('view-hint').textContent=enabled?'Arrastrar: girar · Mayús + arrastrar: desplazar · Rueda: zoom':'Rueda: zoom · Arrastrar: desplazar';
   const dock=document.querySelector<HTMLElement>('.cad-dock');
-  if(dock){dock.hidden=enabled;dock.inert=enabled;}
+  if(dock){dock.hidden=false;dock.inert=!!controller;}
   el('drawing-region').hidden=enabled||regions.length<2;
   if(enabled){
     const count=view3D!.setShapes(shapesFromDocument(documentModel!));
     notice(count?'Vista 3D de líneas y polilíneas. Los objetos no compatibles y los sólidos pueden no aparecer. Un plano sin cotas Z permanece plano.':'Este archivo no contiene líneas o polilíneas compatibles con la vista 3D.',!count);
   }else viewer.resize();
+  navigation?.refresh();
 }
 el('view-2d').onclick=()=>setView3D(false);
 el('view-3d').onclick=()=>setView3D(true);
-el('view-3d-preset').onchange=()=>view3D?.preset(el<HTMLSelectElement>('view-3d-preset').value);
+el('view-3d-preset').onchange=()=>navigation?.change(()=>view3D?.preset(el<HTMLSelectElement>('view-3d-preset').value));
 
 function renderSpaces(){
   const host=el('layout-tabs');host.replaceChildren();
@@ -108,13 +112,13 @@ function renderSpaces(){
 }
 function selectSpace(id:string){
   if(!documentModel)return;
-  selectedSheet=undefined;setView3D(false);
+  selectedSheet=undefined;if(is3D)setView3D(false);
   selectedSheet=sheetsOf(documentModel).find(s=>s.id===id);
   const paper=!!selectedSheet;
   el('viewer-paper').hidden=!paper;el('viewer').hidden=paper;
   el('viewport').dataset.view3d=String(paper);
   document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command').forEach(n=>n.hidden=paper);
-  const dock=document.querySelector<HTMLElement>('.cad-dock');if(dock){dock.hidden=paper;dock.inert=paper;}
+  const dock=document.querySelector<HTMLElement>('.cad-dock');if(dock){dock.hidden=false;dock.inert=!!controller;}
   el('new-layer-form').inert=paper;
   el('drawing-region').hidden=paper||regions.length<2;
   el('paper-info').hidden=!paper;
@@ -124,13 +128,13 @@ function selectSpace(id:string){
     el('mode-badge').textContent='PRESENTACIÓN · 2D';el('prop-view').textContent=selectedSheet.name;el('view-label').textContent=`LAYOUT · ${selectedSheet.name}`;
     el('paper-info').textContent=selectedSheet.width&&selectedSheet.height?`${selectedSheet.width.toFixed(2)} × ${selectedSheet.height.toFixed(2)} ${selectedSheet.units} · ${selectedSheet.viewports.length} viewport(s)`:'Formato de papel no disponible · encuadre por contenido';
     el('view-hint').textContent='Rueda: zoom · Arrastrar: desplazar la hoja';
-  }else viewer.resize();
+  }else setView3D(false);
   showDrawingWarnings(viewer.getLoadResult()?.warnings??[]);renderSpaces();controls();
 }
 
 
 function controls() {
-  (document.querySelector('.cad-dock') as HTMLElement | null)?.toggleAttribute('inert', !!controller || is3D || !!selectedSheet || !!bim);
+  (document.querySelector('.cad-dock') as HTMLElement | null)?.toggleAttribute('inert', !!controller);
   document.querySelector<HTMLElement>('.sidebar')!.inert = !!controller || !!bim;
   document.querySelectorAll<HTMLButtonElement>('[data-drawing]').forEach(b => b.disabled = (!active && !bim) || !!controller);
   el<HTMLButtonElement>('view-3d').disabled=!active||!!controller||!!selectedSheet||!!bim;
@@ -139,6 +143,7 @@ function controls() {
   el('new-layer-form').inert=!!selectedSheet||is3D;
   el<HTMLButtonElement>('clear').disabled = !!controller;
   el<HTMLButtonElement>('open').disabled = !!controller;
+  navigation?.refresh();
 }
 function updateProperties(file?: File) {
   const count = documentModel?.entities.length ?? 0;
@@ -225,9 +230,9 @@ async function openBim(file:File,companions:File[]){
     candidate=new BimViewer(host);const result=await candidate.load(file,companions,signal,message=>el('progress-text').textContent=message);
     closeBim();bim=candidate;bimHost=host;host.style.visibility='';el('viewer-bim').hidden=false;document.querySelector('.shell')!.classList.add('bim-mode');
     el('viewer').hidden=true;el('viewer-paper').hidden=true;el('viewer-3d').hidden=true;el('empty').hidden=true;el('paper-info').hidden=true;el('drawing-region').hidden=true;el('view-3d-preset').hidden=true;el('layout-tabs').hidden=true;
-    document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command,.cad-dock').forEach(n=>n.hidden=true);el('viewport').dataset.view3d='true';
+    document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command').forEach(n=>n.hidden=true);el('viewport').dataset.view3d='true';
     document.querySelector('.viewer-title span')!.textContent='Modelo 3D · Elementos y propiedades';el('tab').textContent=file.name;el('mode-badge').textContent='MODELO BIM · 3D';el('view-label').textContent=result.format+' · 3D';el('view-hint').textContent='Arrastrar: girar · Botón derecho: desplazar · Rueda: zoom';el('zoom-label').textContent='3D';el('coordinates').textContent='MODELO BIM · LOCAL';
-    currentName=file.name;el('context-name').textContent=file.name;el('status').textContent=`${result.format} · ${result.count} elementos · Procesamiento local`;
+    currentName=file.name;fileRevision++;el('context-name').textContent=file.name;el('status').textContent=`${result.format} · ${result.count} elementos · Procesamiento local`;
     candidate.background(document.querySelector('.shell')!.classList.contains('light-view'));requestAnimationFrame(()=>bim?.fit());
     notice('Modelo local. Selecciona elementos para ver sus propiedades básicas. NWD/NWC/NWF requieren conversión previa a IFC o glTF/GLB.');
   }catch(error){candidate?.destroy();host.remove();notice(signal.aborted?'Apertura cancelada.':`No se pudo abrir el modelo. ${error instanceof Error?error.message:String(error)}`,!signal.aborted);}
@@ -245,7 +250,7 @@ async function open(file: File,companions:File[]=[]) {
     const result = await viewer.loadFile(file, { signal: controller.signal });
     closeBim();
     sessionLayers.clear(); activeLayer = 'MX_TRAZOS'; el('layer-error').hidden = true;
-    documentModel = viewer.renderer.getSourceDocument(); active = true; currentName = file.name;
+    documentModel = viewer.renderer.getSourceDocument(); active = true; currentName = file.name;fileRevision++;
     selectedSheet=undefined;el('viewer-paper').hidden=true;el('paper-info').hidden=true;
     if(documentModel)prepareReferences(documentModel);
     viewer.renderer.setDocument(documentModel!);renderSpaces();
@@ -270,7 +275,7 @@ el('open').onclick = selectFile; el('open-empty').onclick = selectFile;
 function openFiles(files:File[]){const models=files.filter(f=>/\.(dwg|dxf|ifc|glb|gltf|nwd|nwc|nwf)$/i.test(f.name));if(models.length!==1){notice('Selecciona un solo modelo y, si es glTF, sus archivos .bin y texturas.',true);return;}void open(models[0],files);}
 input.onchange = () => { const files=Array.from(input.files??[]);input.value='';if(files.length)openFiles(files); };
 el('cancel').onclick = () => controller?.abort();
-el('plus').onclick = () => bim ? bim.zoom(1.25) : selectedSheet ? paperView?.zoom(1.25) : is3D ? view3D?.zoom(1.25) : viewer.zoomIn(); el('minus').onclick = () => bim ? bim.zoom(.8) : selectedSheet ? paperView?.zoom(.8) : is3D ? view3D?.zoom(.8) : viewer.zoomOut(); el('fit').onclick = () => fitDrawing();
+el('plus').onclick=()=>navigation?.change(()=>navigationAdapter().zoom(1.25));el('minus').onclick=()=>navigation?.change(()=>navigationAdapter().zoom(.8));el('fit').onclick=()=>navigation?.change(()=>fitDrawing());
 el('drawing-region').onchange = () => { regionIndex=Number(el<HTMLSelectElement>('drawing-region').value);fitDrawing(); };
 el('search').oninput = renderLayers;
 el('active-layer').onchange = () => { activeLayer = el<HTMLSelectElement>('active-layer').value; renderLayers(); };
@@ -284,7 +289,7 @@ el('new-layer-form').onsubmit = e => {
 };
 el('clear').onclick = () => {
   if (controller) return;
-  closeBim();
+  closeBim();fileRevision++;
   selectedSheet=undefined;el('viewer-paper').hidden=true;el('paper-info').hidden=true;
   setView3D(false);
   zoomReferenceScale=undefined;viewer.clear(); active = false; documentModel = undefined; currentName = '';
@@ -332,7 +337,7 @@ el<HTMLInputElement>('reference-input').onchange=async e=>{
 };
 el('export').onclick = async () => {
   try {
-    bim?.render();
+    if(selectedSheet)paperView?.draw();else if(is3D)view3D?.draw();bim?.render();
     const canvas = bim ? bim.canvas : selectedSheet ? paperView!.canvas : is3D ? view3D!.canvas : await tools!.composite(await viewer.captureCanvas());
     const link = document.createElement('a'); link.href = canvas.toDataURL('image/png'); link.download = currentName.replace(/\.(dwg|dxf|ifc|glb|gltf)$/i, '') + (selectedSheet?'_'+selectedSheet.name.replace(/[^a-z0-9_-]/gi,'_'):'') + '.png'; document.body.append(link); link.click(); link.remove();
   } catch (error) { notice(`No se pudo exportar la vista: ${String(error)}`, true); }
@@ -346,7 +351,7 @@ viewport.addEventListener('dragleave', e => { if (!viewport.contains(e.relatedTa
 viewport.addEventListener('drop', e => { e.preventDefault(); viewport.classList.remove('dragging'); const files=Array.from(e.dataTransfer?.files??[]);if(files.length)openFiles(files); });
 window.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); selectFile(); }
-  else if (!(e.target instanceof HTMLInputElement) && (active||!!bim) && !controller && e.key.toLowerCase() === 'f') fitDrawing();
+  else if (!(e.target instanceof HTMLInputElement) && (active||!!bim) && !controller && e.key.toLowerCase() === 'f') navigation?.change(()=>fitDrawing());
 });
 tools = new CadTools(viewer, {
   activeLayer: () => activeLayer,
@@ -355,10 +360,15 @@ tools = new CadTools(viewer, {
   layers: () => [...sessionLayers.values()],
   created: name => { if (!layersForView().some(layer => layer.name === name)) sessionLayers.set(name, { name, color: '#f39c1c', isVisible: true }); renderLayers(); }
 });
-window.addEventListener('beforeunload', () => {bim?.destroy();view3D?.destroy();paperView?.destroy();viewer.destroy();}); controls();
-
-
-
+function navigationAdapter():NavigationAdapter {
+  const context=bim?'bim':selectedSheet?'paper':is3D?'wire':'model';
+  const enabled=!!(active||bim)&&!controller;
+  if(bim)return {key:fileRevision+':bim',revision:fileRevision,context,enabled,canvas:bim.canvas,state:()=>bim!.getState(),restore:s=>bim!.setState(s),zoom:f=>bim!.zoom(f),fit:()=>bim!.fit(),window:b=>bim!.zoomWindow(b),setMode:m=>bim!.setInteractionMode(m),preset:v=>bim!.preset(v)};
+  if(selectedSheet&&paperView)return {key:fileRevision+':paper:'+selectedSheet.id,revision:fileRevision,context,enabled,canvas:paperView.canvas,state:()=>paperView!.getState(),restore:s=>paperView!.setState(s),zoom:f=>paperView!.zoom(f),fit:()=>paperView!.fit(),window:b=>paperView!.zoomWindow(b),setMode:()=>{}};
+  if(is3D&&view3D)return {key:fileRevision+':wire',revision:fileRevision,context,enabled,canvas:view3D.canvas,state:()=>view3D!.getState(),restore:s=>view3D!.setState(s),zoom:f=>view3D!.zoom(f),fit:()=>view3D!.fit(),window:b=>view3D!.zoomWindow(b),setMode:m=>view3D!.setInteractionMode(m),preset:v=>view3D!.preset(v)};
+  return {key:fileRevision+':model',revision:fileRevision,context:'model',enabled,canvas:viewer.canvas,state:()=>viewer.renderer.getViewState(),restore:s=>viewer.renderer.setViewState(s),zoom:f=>viewer.renderer.zoom(f),fit:()=>fitDrawing(),window:b=>{const state=viewer.renderer.getViewState(),center=viewer.renderer.screenToWorld({x:b.x+b.width/2,y:b.y+b.height/2});viewer.renderer.setViewState({centerX:center.x,centerY:center.y,scale:state.scale*Math.min(viewer.canvas.clientWidth/b.width,viewer.canvas.clientHeight/b.height)});},mode:()=>tools?.getNavigationMode()??'select',setMode:m=>tools?.setNavigationMode(m==='pan'?'pan':'select')};
+}
+navigation=new Navigation(navigationAdapter);
 
 if(location.hostname==='127.0.0.1'&&new URLSearchParams(location.search).get('benchmark')==='1'){
   (window as any).mxCadBenchmark={
@@ -368,3 +378,8 @@ if(location.hostname==='127.0.0.1'&&new URLSearchParams(location.search).get('be
     canvas:()=>selectedSheet?paperView!.canvas:viewer.canvas
   };
 }
+
+window.addEventListener('beforeunload', () => {bim?.destroy();view3D?.destroy();paperView?.destroy();viewer.destroy();}); controls();
+
+
+

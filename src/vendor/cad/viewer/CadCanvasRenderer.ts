@@ -1,3 +1,4 @@
+import {solidVertices} from '../../../solid-order';
 import { hatchBoundaries } from '../../../hatch-geometry';
 import { applyByBlockColorInheritance, layerVisible, resolveCadColor, resolveFillColor, type CadColorContrastMode } from '../core/color.js';
 import { computeCadDocumentBounds, resolveCadFitBounds } from '../core/bounds.js';
@@ -129,6 +130,11 @@ export class CadCanvasRenderer {
   private view: ViewState = { centerX: 0, centerY: 0, scale: 1 };
   private fitScale = 1;
   private dpr = 1;
+  private prepared=new WeakMap<CadDocument,{document:CadDocument;curves:WeakMap<CadEntity,CadPoint2D[]>;inserts:WeakMap<CadEntity,CadEntity[]>;hatches:WeakMap<CadEntity,ReturnType<typeof hatchBoundaries>>}>();
+  private frame=0;
+  private curveCache=new WeakMap<CadEntity,CadPoint2D[]>();
+  private insertCache=new WeakMap<CadEntity,CadEntity[]>();
+  private hatchCache=new WeakMap<CadEntity,ReturnType<typeof hatchBoundaries>>();
   private isDragging = false;
   private lastPointer?: { x: number; y: number };
   private resizeObserver?: ResizeObserver;
@@ -154,6 +160,7 @@ export class CadCanvasRenderer {
   }
 
   destroy(): void {
+    if(this.frame)cancelAnimationFrame(this.frame);
     this.resizeObserver?.disconnect();
   }
 
@@ -167,10 +174,13 @@ export class CadCanvasRenderer {
     this.emitViewChange();
   }
 
-  setDocument(document: CadDocument): void {
-    this.sourceDocument = document;
-    this.document = createCadSceneDocument(document);
-    this.bounds = computeCadDocumentBounds(this.document, this.boundsOptions());
+  setDocument(document: CadDocument, view?:ViewState): void {
+    this.sourceDocument=document;
+    let cached=view?this.prepared.get(document):undefined;
+    if(!cached){cached={document:createCadSceneDocument(document),curves:new WeakMap(),inserts:new WeakMap(),hatches:new WeakMap()};if(view)this.prepared.set(document,cached);}
+    this.document=cached.document;this.curveCache=cached.curves;this.insertCache=cached.inserts;this.hatchCache=cached.hatches;
+    this.bounds=view?emptyBounds():computeCadDocumentBounds(this.document,this.boundsOptions());
+    if(view){this.view={...view,scale:this.clampScale(view.scale)};this.render();return;}
     this.fitToView();
   }
 
@@ -185,9 +195,11 @@ export class CadCanvasRenderer {
 
   getSourceDocument(): CadDocument | undefined { return this.sourceDocument; }
 
-  setOptions(options: CanvasViewerOptions): void {
+  setOptions(options: CanvasViewerOptions, redraw=true): void {
     const refit = options.fitMode !== undefined && options.fitMode !== this.opts.fitMode;
+    if(['background','foreground','contrastMode','trueColorByteOrder','minColorContrast'].some(k=>(options as any)[k]!==undefined&&(options as any)[k]!== (this.opts as any)[k])){this.insertCache=new WeakMap();this.prepared=new WeakMap();}
     Object.assign(this.opts, options);
+    if(!redraw)return;
     if (refit && this.document) {
       this.fitToView();
       return;
@@ -238,7 +250,7 @@ export class CadCanvasRenderer {
     this.emitViewChange();
   }
 
-  zoom(factor: number, anchor?: CadPoint2D): void {
+  zoom(factor: number, anchor?: CadPoint2D, deferred=false): void {
     if (!Number.isFinite(factor) || factor <= 0) return;
     const point = anchor ?? { x: this.cssWidth / 2, y: this.cssHeight / 2 };
     const before = this.screenToWorld(point);
@@ -246,6 +258,7 @@ export class CadCanvasRenderer {
     const after = this.screenToWorld(point);
     this.view.centerX += before.x - after.x;
     this.view.centerY += before.y - after.y;
+    if(deferred){this.queueRender();return;}
     this.render();
     this.emitViewChange();
   }
@@ -253,10 +266,11 @@ export class CadCanvasRenderer {
   zoomIn(): void { this.zoom(this.opts.wheelZoomFactor); }
   zoomOut(): void { this.zoom(1 / this.opts.wheelZoomFactor); }
 
-  panByScreenDelta(dx: number, dy: number): void {
+  panByScreenDelta(dx: number, dy: number, deferred=false): void {
     if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
     this.view.centerX -= dx / this.view.scale;
     this.view.centerY += dy / this.view.scale;
+    if(deferred){this.queueRender();return;}
     this.render();
     this.emitViewChange();
   }
@@ -288,7 +302,10 @@ export class CadCanvasRenderer {
     };
   }
 
+  private queueRender(){if(!this.frame)this.frame=requestAnimationFrame(()=>{this.frame=0;this.render();this.emitViewChange();});}
+  private pointsFor(e:CadEntity,build:()=>CadPoint2D[]){let p=this.curveCache.get(e);if(!p){p=build();this.curveCache.set(e,p);}return p;}
   render(): RenderStats {
+    if(this.frame){cancelAnimationFrame(this.frame);this.frame=0;}
     const started = performance.now();
     this.stats = { total: 0, drawn: 0, skipped: 0, byType: {}, unsupported: {}, renderElapsedMs: 0, backend: 'canvas2d' };
     this.clearCanvas();
@@ -308,7 +325,7 @@ export class CadCanvasRenderer {
     this.canvas.addEventListener('wheel', (ev) => {
       ev.preventDefault();
       const factor = ev.deltaY < 0 ? this.opts.wheelZoomFactor : 1 / this.opts.wheelZoomFactor;
-      this.zoom(factor, { x: ev.offsetX, y: ev.offsetY });
+      this.zoom(factor, { x: ev.offsetX, y: ev.offsetY },true);
     }, { passive: false });
 
     this.canvas.addEventListener('pointerdown', (ev) => {
@@ -319,7 +336,7 @@ export class CadCanvasRenderer {
     });
     this.canvas.addEventListener('pointermove', (ev) => {
       if (!this.isDragging || !this.lastPointer) return;
-      this.panByScreenDelta(ev.clientX - this.lastPointer.x, ev.clientY - this.lastPointer.y);
+      this.panByScreenDelta(ev.clientX - this.lastPointer.x, ev.clientY - this.lastPointer.y,true);
       this.lastPointer = { x: ev.clientX, y: ev.clientY };
     });
     const stopDrag = (ev?: PointerEvent) => {
@@ -422,6 +439,7 @@ export class CadCanvasRenderer {
     const start = e.startPoint;
     const end = e.endPoint;
     if (!isFinitePoint(start) || !isFinitePoint(end)) return this.markSkipped('LINE');
+    const a=this.worldToScreen(start),b=this.worldToScreen(end),pad=130;if(Math.max(a.x,b.x)<-pad||Math.min(a.x,b.x)>this.cssWidth+pad||Math.max(a.y,b.y)<-pad||Math.min(a.y,b.y)>this.cssHeight+pad){this.stats.skipped++;return;}
     this.strokeWorldPolyline(e, [start, end], false);
   }
 
@@ -429,7 +447,7 @@ export class CadCanvasRenderer {
     const center = e.center;
     const radius = Number(e.radius);
     if (!isFinitePoint(center) || !Number.isFinite(radius)) return this.markSkipped('CIRCLE');
-    this.strokeWorldPolyline(e, arcPoints(xy(center), radius, 0, Math.PI * 2, true), true);
+    this.strokeWorldPolyline(e, this.pointsFor(e,()=>arcPoints(xy(center), radius, 0, Math.PI * 2, true)), true);
   }
 
   private drawArc(e: CadEntity): void {
@@ -438,7 +456,7 @@ export class CadCanvasRenderer {
     const startAngle = Number(e.startAngle);
     const endAngle = Number(e.endAngle);
     if (!isFinitePoint(center) || !Number.isFinite(radius) || !Number.isFinite(startAngle) || !Number.isFinite(endAngle)) return this.markSkipped('ARC');
-    this.strokeWorldPolyline(e, arcPoints(xy(center), radius, startAngle, endAngle, true), false);
+    this.strokeWorldPolyline(e, this.pointsFor(e,()=>arcPoints(xy(center), radius, startAngle, endAngle, true)), false);
   }
 
   private drawPolyline(e: CadEntity): void {
@@ -463,7 +481,7 @@ export class CadCanvasRenderer {
     const major = e.majorAxisEndPoint;
     const ratio = Number(e.axisRatio ?? 1);
     if (!isFinitePoint(center) || !isFinitePoint(major)) return this.markSkipped('ELLIPSE');
-    const pts = ellipsePoints(center, major, ratio, Number(e.startAngle ?? 0), Number(e.endAngle ?? Math.PI * 2));
+    const pts = this.pointsFor(e,()=>ellipsePoints(center, major, ratio, Number(e.startAngle ?? 0), Number(e.endAngle ?? Math.PI * 2)));
     const closed = Math.abs(Number(e.endAngle ?? Math.PI * 2) - Number(e.startAngle ?? 0)) >= Math.PI * 2 - 1e-6;
     this.strokeWorldPolyline(e, pts, closed);
   }
@@ -492,13 +510,16 @@ export class CadCanvasRenderer {
   private drawInsert(e: CadEntity, depth: number): void {
     const block = this.lookupBlock(e.blockName ?? e.name);
     if (block && depth < this.opts.maxInsertDepth) {
-      const matrix = matrixFromInsert(e, block.basePoint ?? { x: 0, y: 0 });
-      for (const child of block.entities) {
-        if(child.type==='ATTDEF' && e.attribs?.some(a=>a.attributeTag && a.attributeTag===child.attributeTag))continue;
-        const inheritedColor = applyByBlockColorInheritance(child, e, this.document, { foreground: this.opts.foreground, background: this.opts.background, trueColorByteOrder: this.opts.trueColorByteOrder, contrastMode: this.opts.contrastMode, minColorContrast: this.opts.minColorContrast });
-        const inherited = applyByBlockLineTypeInheritance(inheritedColor, e, this.document);
-        this.drawEntityTracked(transformEntity(inherited, matrix), depth + 1);
+      let children=this.insertCache.get(e);
+      if(!children){const matrix=matrixFromInsert(e,block.basePoint??{x:0,y:0});children=[];
+        for(const child of block.entities){
+          if(child.type==='ATTDEF'&&e.attribs?.some(a=>a.attributeTag&&a.attributeTag===child.attributeTag))continue;
+          const color=applyByBlockColorInheritance(child,e,this.document,{foreground:this.opts.foreground,background:this.opts.background,trueColorByteOrder:this.opts.trueColorByteOrder,contrastMode:this.opts.contrastMode,minColorContrast:this.opts.minColorContrast});
+          children.push(transformEntity(applyByBlockLineTypeInheritance(color,e,this.document),matrix));
+        }
+        this.insertCache.set(e,children);
       }
+      for(const child of children)this.drawEntityTracked(child,depth+1);
       for(const attr of e.attribs??[])this.drawEntityTracked(attr,depth+1);
       return;
     }
@@ -513,7 +534,8 @@ export class CadCanvasRenderer {
   }
 
   private drawSolid(e: CadEntity): void {
-    const vertices = (e.vertices ?? e.points) as CadPoint3D[] | undefined;
+    const rawVertices = (e.vertices ?? e.points) as CadPoint3D[] | undefined;
+    const vertices=rawVertices?solidVertices(e.type,rawVertices):undefined;
     if (!Array.isArray(vertices) || vertices.length < 3) return this.markSkipped(String(e.type));
     this.beginStyledPath(e, true);
     const first = this.worldToScreen(vertices[0]);
@@ -528,7 +550,7 @@ export class CadCanvasRenderer {
   }
 
   private drawHatch(e: CadEntity): void {
-    const {loops}=hatchBoundaries(e);
+    let boundaries=this.hatchCache.get(e);if(!boundaries){boundaries=hatchBoundaries(e);this.hatchCache.set(e,boundaries);}const {loops}=boundaries;
     if(!loops.length)return this.markSkipped('HATCH');
     this.beginStyledPath(e,true,false);
     const ctx=this.ctx;

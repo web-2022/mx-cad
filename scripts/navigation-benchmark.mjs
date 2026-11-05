@@ -9,6 +9,7 @@ try{
   let lines='';for(let i=0;i<10000;i++){const x=i%100,y=Math.floor(i/100);lines+=`0\nLINE\n5\n${(100000+i).toString(16)}\n330\n20\n8\n0\n10\n${x}\n20\n${y}\n11\n${x+.4}\n21\n${y+.4}\n`;}
   text=text.slice(0,at)+lines+text.slice(at);let start=performance.now();
   await page.locator('#file-input').setInputFiles({name:'benchmark-10000.dxf',mimeType:'application/dxf',buffer:Buffer.from(text)});await page.locator('#busy').waitFor({state:'hidden'});await expect(page.locator('#filename')).toHaveText('benchmark-10000.dxf');
+  const entityCount=Number((await page.locator('#stat-entities').textContent()).replace(/\D/g,''));if(entityCount<10000)throw Error('Benchmark did not load all generated entities');
   const openDxfMs=+(performance.now()-start).toFixed(2);
   const metrics=await page.evaluate(()=>{
     const api=window.mxCadBenchmark;
@@ -26,5 +27,5 @@ try{
   });
   const {zoom,pan,layouts,paperZoom}=metrics;
   start=performance.now();await page.locator('#file-input').setInputFiles('tests/fixtures/HatchG.dwg');await page.locator('#busy').waitFor({state:'hidden'});await expect(page.locator('#filename')).toHaveText('HatchG.dwg');const openDwgMs=+(performance.now()-start).toFixed(2);
-  console.log('MX_BENCHMARK '+JSON.stringify({cpu:os.cpus()[0].model,cpus:os.cpus().length,platform:os.platform(),node:process.version,viewport:'1400x900',dxfBytes:Buffer.byteLength(text),generatedLines:10000,dwgBytes:(await readFile('tests/fixtures/HatchG.dwg')).length,openDxfMs,openDwgMs,measurement:'CPU ms, deterministic interaction frame flush; not display FPS',modelZoom:summary(zoom),pointerPan:summary(pan),layoutSwitch:summary(layouts),paperZoom:summary(paperZoom)}));
+  console.log('MX_BENCHMARK '+JSON.stringify({cpu:os.cpus()[0].model,cpus:os.cpus().length,platform:os.platform(),node:process.version,viewport:'1400x900',dxfBytes:Buffer.byteLength(text),generatedLines:10000,entityCount,dwgBytes:(await readFile('tests/fixtures/HatchG.dwg')).length,openDxfMs,openDwgMs,measurement:'CPU ms, deterministic interaction frame flush; not display FPS',modelZoom:summary(zoom),pointerPan:summary(pan),layoutSwitch:summary(layouts),paperZoom:summary(paperZoom)}));
 }finally{await app.close();}

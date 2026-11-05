@@ -237,3 +237,6 @@ button:disabled{opacity:.35;cursor:default}
 @media(max-width:580px){.bim-surface{grid-template-columns:minmax(0,1fr) 145px}.bim-panel{padding:7px;font-size:10px}}
 
 .shell.bim-mode .workspace{grid-template-rows:auto minmax(0,1fr) auto}
+
+.nav-tools{display:flex;flex-direction:column;gap:4px}.cad-dock:not([data-context="model"]) .cad-edit-command{display:none}.cad-dock{min-height:0}.cad-dock .dock-button:focus-visible{outline:2px solid #fff;outline-offset:-2px}.cad-dock .dock-button:disabled{opacity:.35;cursor:not-allowed}.nav-window{position:absolute;border:1px solid #ffe16d;background:#ffe16d20;pointer-events:none;z-index:7}.nav-window-active canvas{cursor:crosshair!important}.shell.bim-mode .body{grid-template-columns:minmax(0,1fr) 72px}.shell.bim-mode .cad-dock{display:flex}
+@media(max-width:580px){.shell.bim-mode .body{grid-template-columns:minmax(0,1fr) 56px}}

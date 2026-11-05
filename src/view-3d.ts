@@ -17,6 +17,8 @@ export class View3D {
   private scale=1;
   private pan={x:0,y:0};
   private light=false;
+  private mode:'pan'|'orbit'='orbit';
+  private frame=0;
   private observer: ResizeObserver;
   private drag?: {id:number;x:number;y:number;pan:boolean};
   private host: HTMLElement;
@@ -26,12 +28,12 @@ export class View3D {
     this.canvas.tabIndex=0;
     this.canvas.style.cssText='width:100%;height:100%;display:block;touch-action:none';
     host.append(this.canvas);
-    this.canvas.onpointerdown=e=>{if(this.drag)return;this.drag={id:e.pointerId,x:e.clientX,y:e.clientY,pan:e.shiftKey||e.button!==0};this.canvas.setPointerCapture(e.pointerId);};
+    this.canvas.onpointerdown=e=>{if(this.drag)return;this.drag={id:e.pointerId,x:e.clientX,y:e.clientY,pan:this.mode==='pan'||e.shiftKey||e.button!==0};this.canvas.setPointerCapture(e.pointerId);};
     this.canvas.onpointermove=e=>{
       const d=this.drag;if(!d||d.id!==e.pointerId)return;
       const dx=e.clientX-d.x,dy=e.clientY-d.y;d.x=e.clientX;d.y=e.clientY;
       if(d.pan){this.pan.x+=dx;this.pan.y+=dy;}else{this.yaw+=dx*.008;this.pitch=Math.max(-Math.PI/2,Math.min(Math.PI/2,this.pitch+dy*.008));}
-      this.draw();
+      this.queueDraw();
     };
     this.canvas.onpointerup=this.canvas.onpointercancel=this.canvas.onlostpointercapture=()=>{this.drag=undefined;};
     this.canvas.oncontextmenu=e=>e.preventDefault();
@@ -48,7 +50,12 @@ export class View3D {
     }else this.draw();
     return this.shapes.length;
   }
-  preset(view: string){this.yaw=view==='front'?0:-Math.PI/4;this.pitch=view==='top'?Math.PI/2:view==='front'?0:Math.PI/5;if(view==='top')this.yaw=0;this.fit();}
+  preset(view: string){this.yaw=view==='front'?0:view==='side'?Math.PI/2:-Math.PI/4;this.pitch=view==='top'?Math.PI/2:['front','side'].includes(view)?0:Math.PI/5;if(view==='top')this.yaw=0;this.fit();}
+  getState(){return {yaw:this.yaw,pitch:this.pitch,scale:this.scale,pan:{...this.pan}};}
+  setState(s:{yaw:number;pitch:number;scale:number;pan:{x:number;y:number}}){this.yaw=s.yaw;this.pitch=s.pitch;this.scale=s.scale;this.pan={...s.pan};this.draw();}
+  setInteractionMode(mode:'select'|'pan'|'orbit'){this.mode=mode==='pan'?'pan':'orbit';}
+  zoomWindow(b:{x:number;y:number;width:number;height:number}){const f=Math.min(this.host.clientWidth/b.width,this.host.clientHeight/b.height);this.pan={x:(this.pan.x-(b.x+b.width/2-this.host.clientWidth/2))*f,y:(this.pan.y-(b.y+b.height/2-this.host.clientHeight/2))*f};this.scale*=f;this.draw();}
+  private queueDraw(){if(!this.frame)this.frame=requestAnimationFrame(()=>{this.frame=0;this.draw();});}
   fit(){
     let width=0,height=0;
     for(const s of this.shapes)for(const p of s.points){const q=projectPoint(p,this.center,this.yaw,this.pitch);width=Math.max(width,Math.abs(q.x)*2);height=Math.max(height,Math.abs(q.y)*2);}
@@ -59,13 +66,14 @@ export class View3D {
   background(light: boolean){this.light=light;this.draw();}
   draw(){
     const width=this.host.clientWidth,height=this.host.clientHeight;if(!width||!height)return;
-    const ratio=Math.min(devicePixelRatio||1,2);this.canvas.width=Math.round(width*ratio);this.canvas.height=Math.round(height*ratio);
-    const ctx=this.canvas.getContext('2d');if(!ctx)return;ctx.scale(ratio,ratio);
+    if(this.frame){cancelAnimationFrame(this.frame);this.frame=0;}
+    const ratio=Math.min(devicePixelRatio||1,2),cw=Math.round(width*ratio),ch=Math.round(height*ratio);if(this.canvas.width!==cw||this.canvas.height!==ch){this.canvas.width=cw;this.canvas.height=ch;}
+    const ctx=this.canvas.getContext('2d');if(!ctx)return;ctx.setTransform(ratio,0,0,ratio,0,0);
     ctx.fillStyle=this.light?'#f4f5f7':'#111d31';ctx.fillRect(0,0,width,height);
     ctx.strokeStyle=this.light?'#192844':'#e4ebf3';ctx.fillStyle=ctx.strokeStyle;ctx.lineWidth=1;
     for(const s of this.shapes){ctx.beginPath();s.points.forEach((p,i)=>{const q=projectPoint(p,this.center,this.yaw,this.pitch);const x=width/2+this.pan.x+q.x*this.scale,y=height/2+this.pan.y-q.y*this.scale;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);if(s.points.length===1)ctx.fillRect(x-2,y-2,4,4);});if(s.closed)ctx.closePath();ctx.stroke();}
     ctx.font='12px system-ui';ctx.fillText('3D · X / Y / Z · líneas y polilíneas',16,height-18);
   }
-  destroy(){this.observer.disconnect();this.canvas.remove();}
+  destroy(){if(this.frame)cancelAnimationFrame(this.frame);this.observer.disconnect();this.canvas.remove();}
 }
 
