@@ -11,6 +11,10 @@ test('local GLB, glTF companions and IFC: geometry, properties, visibility, PNG 
     await page.locator('#file-input').setInputFiles('tests/fixtures/model.glb');
     await expect(page.locator('#status')).toContainText('GLB · 1 elementos');
     assert.equal(await page.locator('#viewer-bim').isVisible(),true);
+    await page.locator('#notice').click();
+    await expect.poll(()=>page.locator('.bim-stage canvas').evaluate(canvas=>{
+      const gl=canvas.getContext('webgl2'),pixel=new Uint8Array(4);gl.readPixels(Math.floor(canvas.width/2),Math.floor(canvas.height/2),1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);return pixel[0]>60&&pixel[0]>pixel[1];
+    })).toBe(true);
     await page.getByRole('button',{name:'Triangulo de prueba',exact:true}).click();await expect(page.locator('#bim-properties')).toContainText('Arquitectura');
     const visible=page.getByRole('checkbox',{name:'Mostrar Triangulo de prueba',exact:true});await visible.uncheck();await visible.check();
     await page.locator('#plus').click();await page.locator('#fit').click();
@@ -19,8 +23,10 @@ test('local GLB, glTF companions and IFC: geometry, properties, visibility, PNG 
     await page.locator('#export').click();await expect.poll(async()=>{try{return(await readFile('test-results/bim.png')).length>100;}catch{return false;}}).toBe(true);
     await page.locator('#file-input').setInputFiles('tests/fixtures/model.gltf');await page.locator('#busy').waitFor({state:'hidden'});await expect(page.locator('#notice')).toContainText('Falta el archivo local');
     await page.locator('#file-input').setInputFiles(['tests/fixtures/model.gltf','tests/fixtures/model.bin']);await expect(page.locator('#status')).toContainText('GLTF · 1 elementos');
+    const external=JSON.parse(await readFile('tests/fixtures/model.gltf','utf8'));external.buffers[0].uri='https://example.com/model.bin';
+    await page.locator('#file-input').setInputFiles({name:'externo.gltf',mimeType:'model/gltf+json',buffer:Buffer.from(JSON.stringify(external))});await page.locator('#busy').waitFor({state:'hidden'});await expect(page.locator('#notice')).toContainText('referencias externas');
     await page.locator('#file-input').setInputFiles('tests/fixtures/wall.ifc');await expect(page.locator('#status')).toContainText('IFC · 1 elementos',{timeout:90000});
-    await page.getByRole('button',{name:'Muro de prueba',exact:true}).click();await expect(page.locator('#bim-properties')).toContainText('IFCWALL');await expect(page.locator('#bim-properties')).toContainText('M-01');
+    await page.locator('#notice').click();await page.getByRole('button',{name:'Muro de prueba',exact:true}).click();await expect(page.locator('#bim-properties')).toContainText('IFCWALL');await expect(page.locator('#bim-properties')).toContainText('M-01');
     await page.locator('#file-input').setInputFiles({name:'modelo.nwd',mimeType:'application/octet-stream',buffer:Buffer.from('test')});await expect(page.locator('#notice')).toContainText('no se abren directamente');
     await page.locator('#file-input').setInputFiles('public/ejemplo.dxf');await expect(page.locator('#filename')).toHaveText('ejemplo.dxf');assert.equal(await page.locator('#viewer-bim').isVisible(),false);assert.equal(await page.locator('#viewer').isVisible(),true);
     await page.locator('#clear').click();assert.equal(await page.locator('#empty').isVisible(),true);assert.deepEqual(remote,[]);assert.deepEqual(errors,[]);

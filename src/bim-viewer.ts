@@ -111,7 +111,7 @@ export class BimViewer {
   fit(){
     this.resize();const bounds=new T.Box3().setFromObject(this.root),center=bounds.getCenter(new T.Vector3()),size=bounds.getSize(new T.Vector3());
     const radius=Math.max(size.length()/2,.001),distance=radius/Math.sin(Math.atan(Math.tan(this.camera.fov*Math.PI/360)*Math.min(this.camera.aspect,1)))*1.15;
-    this.camera.near=Math.max(distance/10000,.00001);this.camera.far=Math.max(distance*100,10);this.camera.position.copy(center).add(new T.Vector3(1,.8,1).normalize().multiplyScalar(distance));this.orbit.target.copy(center);this.camera.updateProjectionMatrix();this.orbit.update();this.render();
+    this.camera.near=Math.max(distance/10000,.00001);this.camera.far=Math.max(distance*100,10);this.camera.position.copy(center).add(new T.Vector3(1,.8,1).normalize().multiplyScalar(distance));this.orbit.target.copy(center);this.orbit.minDistance=this.camera.near*2;this.orbit.maxDistance=this.camera.far/2;this.camera.updateProjectionMatrix();this.orbit.update();this.render();
   }
   zoom(factor:number){this.camera.position.sub(this.orbit.target).multiplyScalar(1/factor).add(this.orbit.target);this.orbit.update();this.render();}
   background(light:boolean){this.scene.background=new T.Color(light?'#f4f5f7':'#111d31');this.render();}
