@@ -21,7 +21,7 @@ app.whenReady().then(() => {
     const origin = `http://127.0.0.1:${server.address().port}`;
     win.webContents.setWindowOpenHandler(({ url }) => { if (url.startsWith('https://')) shell.openExternal(url); return { action: 'deny' }; });
     win.webContents.on('will-navigate', (event, url) => { if (new URL(url).origin !== origin) event.preventDefault(); });
-    win.loadURL(origin);
+    win.loadURL(origin+(process.env.MX_CAD_BENCHMARK==='1'?'/?benchmark=1':''));
   });
 });
 app.on('window-all-closed', () => { server?.close(); app.quit(); });

@@ -1,3 +1,4 @@
+import {ShapeIndex} from './shape-index';
 import type { CadViewer } from './vendor/cad/index';
 import { colorFromAci } from './vendor/cad/index';
 import { closest, contains, distance, metrics, segments, shapesFromDocument, validPolygon, type Point, type Shape } from './geometry';
@@ -7,6 +8,8 @@ const instructions:Record<Mode,string>={select:'Haz clic en una línea, punto o 
 const ns='http://www.w3.org/2000/svg';
 interface LayerOptions { activeLayer(): string; visible(name: string): boolean; color(name: string): string; layers(): { name: string; color: string; isVisible: boolean }[]; created(name: string): void }
 export class CadTools {
+  private index=new ShapeIndex([]);
+  private edgeCache=new WeakMap<Shape,ReturnType<typeof segments>>();
   private mode:Mode='select'; private snapPoint=true; private snapLine=false;
   private shapes:Shape[]=[]; private drawings:Shape[]=[]; private pending:Point[]=[];
   private selected?:Shape; private cursor?:Point; private snapped?:Point;
@@ -31,6 +34,7 @@ export class CadTools {
     this.viewport.addEventListener('pointerdown',e=>{
       if(this.viewport.dataset.view3d==='true')return;
       if(!(e.target instanceof HTMLCanvasElement))return;
+      if(e.button!==0)return;
       this.down={x:e.clientX,y:e.clientY};
       if(e.button===0&&this.mode!=='pan'&&this.mode!=='select'){e.preventDefault();e.stopImmediatePropagation();}
     },true);
@@ -42,7 +46,7 @@ export class CadTools {
     },true);
     this.viewport.addEventListener('pointermove',e=>{
       if(this.viewport.dataset.view3d==='true')return;
-      if(this.frame)return;
+      if(this.mode==='select'||this.mode==='pan'||this.frame)return;
       const raw=this.pointer(e);
       this.frame=requestAnimationFrame(()=>{this.frame=0;this.cursor=this.snap(raw);this.redraw();});
     });
@@ -58,19 +62,24 @@ export class CadTools {
     this.sync();
   }
   reset(){this.drawings=[];this.pending=[];this.selected=undefined;this.cursor=undefined;this.snapped=undefined;this.setMode('select');this.refresh();this.select();}
-  refresh(){const doc=this.viewer.getDocument();this.shapes=doc?shapesFromDocument(doc):[];if(this.selected&&(this.selected.origin==='Plano'||!this.layerOptions.visible(this.selected.layer)))this.select();this.redraw();this.sync();}
+  refresh(){const doc=this.viewer.getDocument();this.shapes=doc?shapesFromDocument(doc):[];this.index=new ShapeIndex(this.shapes);if(this.selected&&(this.selected.origin==='Plano'||!this.layerOptions.visible(this.selected.layer)))this.select();this.redraw();this.sync();}
   private pointer(e:PointerEvent){const r=this.viewer.canvas.getBoundingClientRect();return this.viewer.renderer.screenToWorld({x:e.clientX-r.left,y:e.clientY-r.top});}
   private tolerance(){const a=this.viewer.renderer.screenToWorld({x:0,y:0}),b=this.viewer.renderer.screenToWorld({x:10,y:0});return distance(a,b);}
   private all(){return [...this.shapes,...this.drawings.filter(s=>this.layerOptions.visible(s.layer))];}
   private snap(p:Point):Point{
     this.snapped=undefined;let best=this.tolerance(),found:Point|undefined;
-    if(this.snapPoint){for(const s of this.all())for(const n of s.nodes){const d=distance(p,n);if(d<best){best=d;found=n;}}
+    const candidates=this.candidates(p,best);
+    if(this.snapPoint){for(const s of candidates)for(const n of s.nodes){const d=distance(p,n);if(d<best){best=d;found=n;}}
       for(const n of this.pending){const d=distance(p,n);if(d<best){best=d;found=n;}}}
     // Prefer an exact vertex over a segment projection when both are in range.
     if(!found&&this.snapLine)for(const s of this.all())for(const [a,b]of segments(s)){const q=closest(p,a,b),d=distance(p,q);if(d<best){best=d;found=q;}}
     if(found){this.snapped=found;return {...found};}return {...p,z:0};
   }
-  private setMode(mode:Mode){this.mode=mode;this.pending=[];this.cursor=undefined;this.snapped=undefined;document.querySelector('.shell')!.classList.toggle('has-selection',mode==='select'&&!!this.selected);this.viewport.classList.toggle('drawing-mode',mode!=='select'&&mode!=='pan');this.sync();this.redraw();}
+  setNavigationMode(mode:'select'|'pan'){this.setMode(mode);}
+  getNavigationMode(){return this.mode;}
+  private edges(s:Shape){let e=this.edgeCache.get(s);if(!e){e=segments(s);this.edgeCache.set(s,e);}return e;}
+  private candidates(p:Point,r:number){return [...this.index.query(p.x,p.y,r),...this.drawings.filter(s=>this.layerOptions.visible(s.layer))];}
+  private setMode(mode:Mode){this.mode=mode;this.pending=[];this.cursor=undefined;this.snapped=undefined;document.querySelector('.shell')!.classList.toggle('has-selection',mode==='select'&&!!this.selected);this.viewport.classList.toggle('drawing-mode',mode!=='select'&&mode!=='pan');this.sync();this.redraw();this.viewport.dispatchEvent(new CustomEvent('mx:cadmode'));}
   private sync(){
     for(const mode of ['select','pan','measure','line','polygon'])document.getElementById(`tool-${mode}`)!.setAttribute('aria-pressed',String(this.mode===mode));
     document.getElementById('snap-point')!.setAttribute('aria-pressed',String(this.snapPoint));document.getElementById('snap-line')!.setAttribute('aria-pressed',String(this.snapLine));
@@ -83,11 +92,11 @@ export class CadTools {
     if(this.mode==='pan')return;
     if(this.mode==='select'){
       let best=this.tolerance(),hit:Shape|undefined;
-      for(const s of this.all().reverse()){
-        const d=s.points.length===1?distance(raw,s.points[0]):Math.min(...segments(s).map(([a,b])=>distance(raw,closest(raw,a,b))));
+      for(const s of this.candidates(raw,best).reverse()){
+        let d=s.points.length===1?distance(raw,s.points[0]):Infinity;for(const [a,b]of this.edges(s))d=Math.min(d,distance(raw,closest(raw,a,b)));
         if(d<best){best=d;hit=s;}
       }
-      if(!hit)hit=this.all().filter(s=>s.closed&&contains(raw,s)).sort((a,b)=>(metrics(a).area??0)-(metrics(b).area??0))[0];
+      if(!hit)hit=this.candidates(raw,0).filter(s=>s.closed&&contains(raw,s)).sort((a,b)=>(metrics(a).area??0)-(metrics(b).area??0))[0];
       this.select(hit);this.redraw();return;
     }
     const p=this.snap(raw);

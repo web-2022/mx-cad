@@ -1,0 +1,38 @@
+name: Medir navegación CAD
+on:
+  push:
+    branches: [feat/navigation-performance]
+    paths: ['src/**', 'scripts/**', 'package*.json', '.github/workflows/navigation-benchmark.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Conservar el mismo script para ambas versiones
+        run: Copy-Item scripts/navigation-benchmark.mjs "$env:RUNNER_TEMP/navigation-benchmark.mjs"
+      - uses: actions/checkout@v4
+        with:
+          ref: fb966d5a66c573a911a113e9fa7bd93904e52110
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: Copy-Item "$env:RUNNER_TEMP/navigation-benchmark.mjs" scripts/navigation-benchmark.mjs -Force
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - run: npm run build
+      - name: Medir antes
+        run: node scripts/navigation-benchmark.mjs | Tee-Object -FilePath "$env:RUNNER_TEMP/navigation-before.log"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - run: npm run build
+      - name: Medir después
+        run: node scripts/navigation-benchmark.mjs | Tee-Object -FilePath "$env:RUNNER_TEMP/navigation-after.log"
+      - run: node scripts/report-navigation-benchmark.mjs
+

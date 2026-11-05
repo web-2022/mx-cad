@@ -268,6 +268,8 @@ export function isByBlockColor(entity: CadEntity): boolean {
 }
 
 export function applyByBlockColorInheritance(entity: CadEntity, parent: CadEntity, document?: CadDocument, options: ColorResolveOptions = {}): CadEntity {
+  if((!entity.layer||entity.layer==='0')&&parent.layer)entity={...entity,layer:parent.layer};
+  if(entity.lineweight===-2)entity={...entity,lineweight:parent.lineweight&&parent.lineweight>0?parent.lineweight:lookupLayer(document,parent.layer)?.lineweight};
   if (!isByBlockColor(entity)) return entity;
   const inheritedColor = resolveCadColor(parent, document, { ...options, colorMode: 'source' });
   const clone: CadEntity = { ...entity, color: inheritedColor, trueColor: undefined, colorIndex: undefined, colorNumber: undefined };

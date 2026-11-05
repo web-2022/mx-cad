@@ -25,7 +25,7 @@ export class BimViewer {
     this.renderer=new T.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});this.canvas=this.renderer.domElement;this.canvas.setAttribute('aria-label','Modelo 3D BIM');this.stage.append(this.canvas);
     this.renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));this.scene.background=new T.Color('#111d31');
     this.camera=new T.PerspectiveCamera(45,1,.01,1e8);this.camera.position.set(5,4,5);
-    this.orbit=new OrbitControls(this.camera,this.canvas);this.orbit.addEventListener('change',()=>this.render());
+    this.orbit=new OrbitControls(this.camera,this.canvas);this.orbit.mouseButtons.MIDDLE=T.MOUSE.PAN;this.orbit.addEventListener('change',()=>this.render());
     this.scene.add(new T.HemisphereLight(0xffffff,0x596377,2.5));const sun=new T.DirectionalLight(0xffffff,3);sun.position.set(5,10,7);this.scene.add(sun);this.scene.add(this.root);
     this.filter.oninput=()=>this.renderItems();
     this.canvas.onpointerdown=e=>{this.pointer={x:e.clientX,y:e.clientY};};
@@ -108,10 +108,15 @@ export class BimViewer {
     const bounds=new T.Box3();for(const mesh of this.meshes.get(id)??[])if(mesh.visible)bounds.union(new T.Box3().setFromObject(mesh));
     if(!bounds.isEmpty()){this.helper=new T.Box3Helper(bounds,0xf9bc39);this.scene.add(this.helper);}this.render();
   }
-  fit(){
+  getState(){return {position:this.camera.position.toArray(),target:this.orbit.target.toArray(),near:this.camera.near,far:this.camera.far};}
+  setState(s:{position:number[];target:number[];near:number;far:number}){this.camera.position.fromArray(s.position);this.orbit.target.fromArray(s.target);this.camera.near=s.near;this.camera.far=s.far;this.camera.updateProjectionMatrix();this.orbit.update();this.render();}
+  setInteractionMode(mode:'select'|'pan'|'orbit'){this.orbit.enableRotate=mode!=='pan';this.orbit.mouseButtons.LEFT=mode==='pan'?T.MOUSE.PAN:T.MOUSE.ROTATE;}
+  preset(view:string){const directions:Record<string,number[]>={top:[0,1,1e-6],front:[0,0,1],side:[1,0,0],iso:[1,.8,1]};this.fit(directions[view]);}
+  zoomWindow(b:{x:number;y:number;width:number;height:number}){const w=this.stage.clientWidth,h=this.stage.clientHeight,ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((b.x+b.width/2)/w*2-1,1-(b.y+b.height/2)/h*2),this.camera);const normal=this.camera.getWorldDirection(new T.Vector3()),plane=new T.Plane().setFromNormalAndCoplanarPoint(normal,this.orbit.target),target=ray.ray.intersectPlane(plane,new T.Vector3());if(!target)return;const offset=this.camera.position.clone().sub(this.orbit.target).multiplyScalar(1/Math.min(w/b.width,h/b.height));this.orbit.target.copy(target);this.camera.position.copy(target).add(offset);this.orbit.update();this.render();}
+  fit(direction?:number[]){
     this.resize();const bounds=new T.Box3().setFromObject(this.root),center=bounds.getCenter(new T.Vector3()),size=bounds.getSize(new T.Vector3());
     const radius=Math.max(size.length()/2,.001),distance=radius/Math.sin(Math.atan(Math.tan(this.camera.fov*Math.PI/360)*Math.min(this.camera.aspect,1)))*1.15;
-    this.camera.near=Math.max(distance/10000,.00001);this.camera.far=Math.max(distance*100,10);this.camera.position.copy(center).add(new T.Vector3(1,.8,1).normalize().multiplyScalar(distance));this.orbit.target.copy(center);this.orbit.minDistance=this.camera.near*2;this.orbit.maxDistance=this.camera.far/2;this.camera.updateProjectionMatrix();this.orbit.update();this.render();
+    this.camera.near=Math.max(distance/10000,.00001);this.camera.far=Math.max(distance*100,10);this.camera.position.copy(center).add(new T.Vector3(...(direction??[1,.8,1])).normalize().multiplyScalar(distance));this.orbit.target.copy(center);this.orbit.minDistance=this.camera.near*2;this.orbit.maxDistance=this.camera.far/2;this.camera.updateProjectionMatrix();this.orbit.update();this.render();
   }
   zoom(factor:number){this.camera.position.sub(this.orbit.target).multiplyScalar(1/factor).add(this.orbit.target);this.orbit.update();this.render();}
   background(light:boolean){this.scene.background=new T.Color(light?'#f4f5f7':'#111d31');this.render();}

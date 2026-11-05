@@ -80,3 +80,7 @@ El botón **Abrir plano** y el área de arrastre aceptan también `.ifc`, `.glb`
 Límites: WebGL2 requerido; IFC depende de web-ifc y de las representaciones geométricas que soporte. Solo se muestran propiedades básicas de entidades, no todos los conjuntos de propiedades o relaciones BIM. GLB/glTF conserva geometría, materiales y propiedades `extras` disponibles; no convierte mallas en objetos BIM. Animaciones, Draco, Meshopt y texturas comprimidas KTX2 no se configuran en esta versión. Los modelos se centran para visualizarse; no se ofrece coordinación geográfica ni federación. Archivos muy grandes pueden superar la memoria del equipo. Los Layouts y herramientas de dibujo continúan disponibles al abrir un DWG/DXF.
 
 Bibliotecas: Three.js 0.180.0 (MIT) y web-ifc 0.0.72 (MPL-2.0). Se sirven desde el propio sitio, incluidos sus recursos WASM y licencias, sin CDN ni servicios de pago.
+
+## Comandos y rendimiento
+
+La barra vertical derecha permanece disponible en Model, Layouts, CAD 3D y BIM. Incluye selección cuando es compatible, Pan con botón central, zoom, ajuste, ventana, encuadre anterior y vistas 3D. Consulta [navegación y mediciones](docs/navigation-performance.md) para conocer las optimizaciones, la metodología y las limitaciones de fidelidad pendientes.
