@@ -17,7 +17,7 @@ test('local GLB, glTF companions and IFC: geometry, properties, visibility, PNG 
     })).toBe(true);
     await page.getByRole('button',{name:'Triangulo de prueba',exact:true}).click();await expect(page.locator('#bim-properties')).toContainText('Arquitectura');
     const visible=page.getByRole('checkbox',{name:'Mostrar Triangulo de prueba',exact:true});await visible.uncheck();await visible.check();
-    await page.locator('#plus').click();await page.locator('#fit').click();
+    await page.locator('#plus').click();await page.locator('#fit').click();console.log('GLB: geometría renderizada, nombres y propiedades comprobados');
     await mkdir('test-results',{recursive:true});
     await app.evaluate(({session},save)=>session.defaultSession.on('will-download',(_e,item)=>item.setSavePath(save)),path.resolve('test-results/bim.png'));
     await page.locator('#export').click();await expect.poll(async()=>{try{return(await readFile('test-results/bim.png')).length>100;}catch{return false;}}).toBe(true);
@@ -25,7 +25,7 @@ test('local GLB, glTF companions and IFC: geometry, properties, visibility, PNG 
     await page.locator('#file-input').setInputFiles(['tests/fixtures/model.gltf','tests/fixtures/model.bin']);await expect(page.locator('#status')).toContainText('GLTF · 1 elementos');
     const external=JSON.parse(await readFile('tests/fixtures/model.gltf','utf8'));external.buffers[0].uri='https://example.com/model.bin';
     await page.locator('#file-input').setInputFiles({name:'externo.gltf',mimeType:'model/gltf+json',buffer:Buffer.from(JSON.stringify(external))});await page.locator('#busy').waitFor({state:'hidden'});await expect(page.locator('#notice')).toContainText('referencias externas');
-    await page.locator('#file-input').setInputFiles('tests/fixtures/wall.ifc');await expect(page.locator('#status')).toContainText('IFC · 1 elementos',{timeout:90000});
+    console.log('glTF: recursos locales y bloqueo de referencias externas comprobados');await page.locator('#file-input').setInputFiles('tests/fixtures/wall.ifc');await page.locator('#busy').waitFor({state:'hidden',timeout:90000});assert.match(await page.locator('#status').textContent(),/IFC · 1 elementos/,await page.locator('#notice').textContent());
     await page.locator('#notice').click();await page.getByRole('button',{name:'Muro de prueba',exact:true}).click();await expect(page.locator('#bim-properties')).toContainText('IFCWALL');await expect(page.locator('#bim-properties')).toContainText('M-01');
     await page.locator('#file-input').setInputFiles({name:'modelo.nwd',mimeType:'application/octet-stream',buffer:Buffer.from('test')});await expect(page.locator('#notice')).toContainText('no se abren directamente');
     await page.locator('#file-input').setInputFiles('public/ejemplo.dxf');await expect(page.locator('#filename')).toHaveText('ejemplo.dxf');assert.equal(await page.locator('#viewer-bim').isVisible(),false);assert.equal(await page.locator('#viewer').isVisible(),true);

@@ -86,7 +86,7 @@ export class BimViewer {
       gltf.scene.traverse((object:any)=>{
         if(!object.isMesh&&!object.isLine&&!object.isPoints)return;
         const properties:Record<string,string>={};for(const [key,value]of Object.entries(object.userData??{}))properties[key]=(typeof value==='object'?JSON.stringify(value):String(value)).slice(0,2000);
-        properties.Nombre=object.name||`Objeto ${id+1}`;object.userData.mxBimId=++id;
+        properties.Nombre=String(object.userData?.name||object.name||`Objeto ${id+1}`);object.userData.mxBimId=++id;
         this.meshes.set(id,[object]);this.items.push({id,name:properties.Nombre,type:object.type,properties});
       });
     }finally{for(const url of urls)URL.revokeObjectURL(url);}
