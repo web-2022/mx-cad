@@ -12,7 +12,7 @@ export class Navigation {
     this.viewport=document.getElementById('viewport')!;this.dock=document.querySelector('.cad-dock')!;this.dock.setAttribute('aria-label','Navegación y herramientas del visor');this.rect.className='nav-window';this.rect.hidden=true;this.viewport.append(this.rect);
     const group=document.createElement('div');group.className='nav-tools';group.innerHTML='<span class="dock-heading">VISTA</span>';
     for(const id of ['tool-select','tool-pan'])group.append(document.getElementById(id)!);
-    document.getElementById('tool-pan')!.innerHTML='<span>✥</span>Pan';
+    group.querySelector('#tool-pan')!.innerHTML='<span>✥</span>Pan';
     for(const [id,icon,label,title]of [['orbit','⟳','Orbitar','Girar el modelo 3D'],['plus','＋','Acercar','Acercar'],['minus','−','Alejar','Alejar'],['fit','⛶','Ajustar','Ajustar al dibujo o a la hoja (F)'],['window','▣','Ventana','Zoom por ventana: arrastra un rectángulo'],['previous','↩','Anterior','Restaurar el encuadre anterior'],['top','⬒','Superior','Vista superior'],['front','▤','Frontal','Vista frontal 3D'],['side','◧','Lateral','Vista lateral 3D'],['iso','◇','Isométrica','Vista isométrica 3D']]){
       const button=document.createElement('button');button.id='nav-'+id;button.className='dock-button';button.title=title;button.setAttribute('aria-label',title);button.innerHTML=`<span>${icon}</span>${label}`;if(['orbit','window'].includes(id))button.setAttribute('aria-pressed','false');button.onclick=()=>this.command(id);group.append(button);
     }
