@@ -69,3 +69,14 @@ El control **Avisos del dibujo** distingue recursos ausentes y representaciones 
 Se conserva una copia identificada del motor AGPL en `src/vendor/cad` para corregir la extracción y el renderizado: ver `src/vendor/cad/UPSTREAM.md`. No hay servicios externos ni dependencias de pago. Vite empaqueta el worker modificado y usa los recursos WASM del paquete fijado.
 
 La suite añade separación de espacios, tamaños de hoja, transformación de viewports, límites hatch, apertura de un DXF con varias hojas y un DWG público real, exportación y carga de imágenes locales. Las pruebas Electron requieren la compilación y una plataforma con Electron.
+
+
+## Modelos BIM gratuitos: IFC y glTF/GLB
+
+El botón **Abrir plano** y el área de arrastre aceptan también `.ifc`, `.glb` y `.gltf`. Se visualizan como modelos 3D con giro, zoom, ajuste, selección, búsqueda de elementos, visibilidad individual, propiedades básicas y exportación PNG. Un IFC se procesa en un worker local cancelable. Para glTF con recursos externos, selecciona a la vez el `.gltf`, sus `.bin` y las imágenes; las rutas remotas no se descargan. Se recomienda GLB autocontenido. Los datos no se suben a servicios externos y no hay una licencia de visualización de pago.
+
+**NWD, NWC y NWF no son formatos admitidos directamente.** Este visor no incluye un conversor Navisworks. Usa una herramienta que pueda convertir tu archivo, o exporta IFC/GLB desde la aplicación que creó el modelo original. La conversión puede requerir una herramienta con licencia y puede perder propiedades; comprueba su resultado antes de usarlo.
+
+Límites: WebGL2 requerido; IFC depende de web-ifc y de las representaciones geométricas que soporte. Solo se muestran propiedades básicas de entidades, no todos los conjuntos de propiedades o relaciones BIM. GLB/glTF conserva geometría, materiales y propiedades `extras` disponibles; no convierte mallas en objetos BIM. Animaciones, Draco, Meshopt y texturas comprimidas KTX2 no se configuran en esta versión. Los modelos se centran para visualizarse; no se ofrece coordinación geográfica ni federación. Archivos muy grandes pueden superar la memoria del equipo. Los Layouts y herramientas de dibujo continúan disponibles al abrir un DWG/DXF.
+
+Bibliotecas: Three.js 0.180.0 (MIT) y web-ifc 0.0.72 (MPL-2.0). Se sirven desde el propio sitio, incluidos sus recursos WASM y licencias, sin CDN ni servicios de pago.

@@ -1,3 +1,4 @@
+import type {BimViewer} from './bim-viewer';
 import { PaperView } from './paper-view';
 import { sheetsOf, type DrawingSheet } from './drawing-spaces';
 import { fidelityWarnings, prepareReferences, loadLocalReference } from './references';
@@ -16,6 +17,8 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = layout;
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 let active = false;
+let bim:BimViewer|undefined;
+let bimHost:HTMLElement|undefined;
 let is3D = false;
 let view3D: View3D | undefined;
 let paperView: PaperView | undefined;
@@ -30,6 +33,7 @@ let regions: DrawingRegion[] = [];
 let regionIndex = 0;
 let zoomReferenceScale: number | undefined;
 function fitDrawing() {
+  if(bim){bim.fit();return;}
   if(selectedSheet){paperView?.fit();return;}
   if(is3D){view3D?.fit();return;}
   const region = regions[regionIndex];
@@ -126,10 +130,11 @@ function selectSpace(id:string){
 
 
 function controls() {
-  (document.querySelector('.cad-dock') as HTMLElement | null)?.toggleAttribute('inert', !!controller || is3D || !!selectedSheet);
-  document.querySelector<HTMLElement>('.sidebar')!.inert = !!controller;
-  document.querySelectorAll<HTMLButtonElement>('[data-drawing]').forEach(b => b.disabled = !active || !!controller);
-  el<HTMLButtonElement>('view-3d').disabled=!active||!!controller||!!selectedSheet;
+  (document.querySelector('.cad-dock') as HTMLElement | null)?.toggleAttribute('inert', !!controller || is3D || !!selectedSheet || !!bim);
+  document.querySelector<HTMLElement>('.sidebar')!.inert = !!controller || !!bim;
+  document.querySelectorAll<HTMLButtonElement>('[data-drawing]').forEach(b => b.disabled = (!active && !bim) || !!controller);
+  el<HTMLButtonElement>('view-3d').disabled=!active||!!controller||!!selectedSheet||!!bim;
+  el<HTMLButtonElement>('view-2d').disabled=!active||!!controller||!!bim;
   el('layout-tabs').inert=!!controller;
   el('new-layer-form').inert=!!selectedSheet||is3D;
   el<HTMLButtonElement>('clear').disabled = !!controller;
@@ -206,14 +211,39 @@ function renderLayers() {
   if (!host.children.length) { const p = document.createElement('p'); p.className = 'empty-layer'; p.textContent = active ? 'No hay capas que coincidan.' : 'Las capas aparecerán al abrir un plano.'; host.append(p); }
 }
 
-async function open(file: File) {
+function closeBim(){
+  bim?.destroy();bim=undefined;bimHost?.remove();bimHost=undefined;
+  el('viewer-bim').hidden=true;document.querySelector('.shell')!.classList.remove('bim-mode');el('layout-tabs').hidden=false;
+}
+async function openBim(file:File,companions:File[]){
+  if(!file.size){notice('El archivo está vacío.',true);return;}
+  controller=new AbortController();const signal=controller.signal;controls();el('busy').hidden=false;el('notice').hidden=true;el('progress-text').textContent='Abriendo modelo 3D…';
+  const host=document.createElement('div');host.className='bim-surface';host.style.visibility='hidden';el('viewer-bim').append(host);
+  let candidate:BimViewer|undefined;
+  try{
+    const {BimViewer}=await import('./bim-viewer');if(signal.aborted)throw new DOMException('Cancelado','AbortError');
+    candidate=new BimViewer(host);const result=await candidate.load(file,companions,signal,message=>el('progress-text').textContent=message);
+    closeBim();bim=candidate;bimHost=host;host.style.visibility='';el('viewer-bim').hidden=false;document.querySelector('.shell')!.classList.add('bim-mode');
+    el('viewer').hidden=true;el('viewer-paper').hidden=true;el('viewer-3d').hidden=true;el('empty').hidden=true;el('paper-info').hidden=true;el('drawing-region').hidden=true;el('view-3d-preset').hidden=true;el('layout-tabs').hidden=true;
+    document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command,.cad-dock').forEach(n=>n.hidden=true);el('viewport').dataset.view3d='true';
+    el('tab').textContent=file.name;el('mode-badge').textContent='MODELO BIM · 3D';el('view-label').textContent=result.format+' · 3D';el('view-hint').textContent='Arrastrar: girar · Botón derecho: desplazar · Rueda: zoom';el('zoom-label').textContent='3D';el('coordinates').textContent='MODELO BIM · LOCAL';
+    currentName=file.name;el('context-name').textContent=file.name;el('status').textContent=`${result.format} · ${result.count} elementos · Procesamiento local`;
+    candidate.background(document.querySelector('.shell')!.classList.contains('light-view'));requestAnimationFrame(()=>bim?.fit());
+    notice('Modelo local. Selecciona elementos para ver sus propiedades básicas. NWD/NWC/NWF requieren conversión previa a IFC o glTF/GLB.');
+  }catch(error){candidate?.destroy();host.remove();notice(signal.aborted?'Apertura cancelada.':`No se pudo abrir el modelo. ${error instanceof Error?error.message:String(error)}`,!signal.aborted);}
+  finally{controller=undefined;el('busy').hidden=true;controls();}
+}
+async function open(file: File,companions:File[]=[]) {
   if (controller) return;
-  if (!/\.(dwg|dxf)$/i.test(file.name)) { notice('Selecciona un archivo DWG o DXF.', true); return; }
+  if(/\.(nwd|nwc|nwf)$/i.test(file.name)){notice('NWD/NWC/NWF no se abren directamente. Convierte el modelo previamente a IFC o GLB/glTF.',true);return;}
+  if(/\.(ifc|glb|gltf)$/i.test(file.name)){await openBim(file,companions);return;}
+  if (!/\.(dwg|dxf)$/i.test(file.name)) { notice('Selecciona un archivo DWG, DXF, IFC, GLB o glTF.', true); return; }
   if (!file.size) { notice('El archivo está vacío. Selecciona otro plano.', true); return; }
   controller = new AbortController(); controls(); el('busy').hidden = false; el('notice').hidden = true;
   el('progress-text').textContent = 'Abriendo plano…';
   try {
     const result = await viewer.loadFile(file, { signal: controller.signal });
+    closeBim();
     sessionLayers.clear(); activeLayer = 'MX_TRAZOS'; el('layer-error').hidden = true;
     documentModel = viewer.renderer.getSourceDocument(); active = true; currentName = file.name;
     selectedSheet=undefined;el('viewer-paper').hidden=true;el('paper-info').hidden=true;
@@ -237,9 +267,10 @@ async function open(file: File) {
 const input = el<HTMLInputElement>('file-input');
 const selectFile = () => { if (!controller) input.click(); };
 el('open').onclick = selectFile; el('open-empty').onclick = selectFile;
-input.onchange = () => { const file = input.files?.[0]; input.value = ''; if (file) void open(file); };
+function openFiles(files:File[]){const models=files.filter(f=>/\.(dwg|dxf|ifc|glb|gltf|nwd|nwc|nwf)$/i.test(f.name));if(models.length!==1){notice('Selecciona un solo modelo y, si es glTF, sus archivos .bin y texturas.',true);return;}void open(models[0],files);}
+input.onchange = () => { const files=Array.from(input.files??[]);input.value='';if(files.length)openFiles(files); };
 el('cancel').onclick = () => controller?.abort();
-el('plus').onclick = () => selectedSheet ? paperView?.zoom(1.25) : is3D ? view3D?.zoom(1.25) : viewer.zoomIn(); el('minus').onclick = () => selectedSheet ? paperView?.zoom(.8) : is3D ? view3D?.zoom(.8) : viewer.zoomOut(); el('fit').onclick = () => fitDrawing();
+el('plus').onclick = () => bim ? bim.zoom(1.25) : selectedSheet ? paperView?.zoom(1.25) : is3D ? view3D?.zoom(1.25) : viewer.zoomIn(); el('minus').onclick = () => bim ? bim.zoom(.8) : selectedSheet ? paperView?.zoom(.8) : is3D ? view3D?.zoom(.8) : viewer.zoomOut(); el('fit').onclick = () => fitDrawing();
 el('drawing-region').onchange = () => { regionIndex=Number(el<HTMLSelectElement>('drawing-region').value);fitDrawing(); };
 el('search').oninput = renderLayers;
 el('active-layer').onchange = () => { activeLayer = el<HTMLSelectElement>('active-layer').value; renderLayers(); };
@@ -253,6 +284,7 @@ el('new-layer-form').onsubmit = e => {
 };
 el('clear').onclick = () => {
   if (controller) return;
+  closeBim();
   selectedSheet=undefined;el('viewer-paper').hidden=true;el('paper-info').hidden=true;
   setView3D(false);
   zoomReferenceScale=undefined;viewer.clear(); active = false; documentModel = undefined; currentName = '';
@@ -271,6 +303,7 @@ el('panel-toggle').onclick = () => {
   requestAnimationFrame(() => viewer.resize());
 };
 function setBackground(light: boolean) {
+  bim?.background(light);
   view3D?.background(light);
   viewer.setCanvasOptions({ background: light ? '#f4f5f7' : '#111d31', foreground: light ? '#192844' : '#e4ebf3' });
   document.querySelector('.shell')!.classList.toggle('light-view', light);
@@ -299,7 +332,8 @@ el<HTMLInputElement>('reference-input').onchange=async e=>{
 };
 el('export').onclick = async () => {
   try {
-    const canvas = selectedSheet ? paperView!.canvas : is3D ? view3D!.canvas : await tools!.composite(await viewer.captureCanvas());
+    bim?.render();
+    const canvas = bim ? bim.canvas : selectedSheet ? paperView!.canvas : is3D ? view3D!.canvas : await tools!.composite(await viewer.captureCanvas());
     const link = document.createElement('a'); link.href = canvas.toDataURL('image/png'); link.download = currentName.replace(/\.(dwg|dxf)$/i, '') + (selectedSheet?'_'+selectedSheet.name.replace(/[^a-z0-9_-]/gi,'_'):'') + '.png'; document.body.append(link); link.click(); link.remove();
   } catch (error) { notice(`No se pudo exportar la vista: ${String(error)}`, true); }
 };
@@ -309,10 +343,10 @@ window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => e.preventDefault());
 viewport.addEventListener('dragover', e => { e.preventDefault(); viewport.classList.add('dragging'); });
 viewport.addEventListener('dragleave', e => { if (!viewport.contains(e.relatedTarget as Node)) viewport.classList.remove('dragging'); });
-viewport.addEventListener('drop', e => { e.preventDefault(); viewport.classList.remove('dragging'); const file = e.dataTransfer?.files[0]; if (file) void open(file); });
+viewport.addEventListener('drop', e => { e.preventDefault(); viewport.classList.remove('dragging'); const files=Array.from(e.dataTransfer?.files??[]);if(files.length)openFiles(files); });
 window.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); selectFile(); }
-  else if (!(e.target instanceof HTMLInputElement) && active && !controller && e.key.toLowerCase() === 'f') fitDrawing();
+  else if (!(e.target instanceof HTMLInputElement) && (active||!!bim) && !controller && e.key.toLowerCase() === 'f') fitDrawing();
 });
 tools = new CadTools(viewer, {
   activeLayer: () => activeLayer,
@@ -321,6 +355,7 @@ tools = new CadTools(viewer, {
   layers: () => [...sessionLayers.values()],
   created: name => { if (!layersForView().some(layer => layer.name === name)) sessionLayers.set(name, { name, color: '#f39c1c', isVisible: true }); renderLayers(); }
 });
-window.addEventListener('beforeunload', () => {view3D?.destroy();paperView?.destroy();viewer.destroy();}); controls();
+window.addEventListener('beforeunload', () => {bim?.destroy();view3D?.destroy();paperView?.destroy();viewer.destroy();}); controls();
+
 
 
