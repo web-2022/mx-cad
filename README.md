@@ -84,3 +84,7 @@ Bibliotecas: Three.js 0.180.0 (MIT) y web-ifc 0.0.72 (MPL-2.0). Se sirven desde 
 ## Comandos y rendimiento
 
 La barra vertical derecha permanece disponible en Model, Layouts, CAD 3D y BIM. Incluye selección cuando es compatible, Pan con botón central, zoom, ajuste, ventana, encuadre anterior y vistas 3D. Consulta [navegación y mediciones](docs/navigation-performance.md) para conocer las optimizaciones, la metodología y las limitaciones de fidelidad pendientes.
+
+### Alturas de DWG en la vista 3D
+
+La vista alámbrica aplica la elevación de polilíneas 2D y la orientación OCS de las entidades y bloques compatibles antes de situarlos en coordenadas del modelo. Conserva las cotas de las polilíneas 3D y muestra el rango Z y el número de trazos en Z=0. No desplaza automáticamente planos, perfiles o anotaciones para hacerlos coincidir con un diseño minero. Si el archivo contiene geometría realmente dibujada en Z=0 junto a labores a otra cota, esa diferencia se conserva. Los sólidos, mallas y objetos de aplicaciones mineras no compatibles pueden seguir incompletos; para validar un caso concreto hacen falta su DWG y una referencia visual.

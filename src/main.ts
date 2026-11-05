@@ -1,3 +1,4 @@
+import {heightSummary} from './world-geometry';
 import {Navigation,type NavigationAdapter} from './navigation';
 import type {BimViewer} from './bim-viewer';
 import { PaperView } from './paper-view';
@@ -74,11 +75,12 @@ const viewer = new CadViewer({
   onViewChange(event) { if(bim||selectedSheet||is3D)return; const zoom = Math.round(zoomReferenceScale ? event.view.scale / zoomReferenceScale * 100 : event.zoomPercent); el('coordinates').textContent = `ZOOM ${zoom}%  •  LOCAL`; el('zoom-label').textContent = `${zoom}%`; tools?.redraw(); }
 });
 
+function updateWireInfo(shapes:ReturnType<typeof shapesFromDocument>){const z=heightSummary(shapes),fmt=(n:number)=>n.toLocaleString('es-PE',{maximumFractionDigits:3});el('wire-info').textContent=z?`Alturas Z: ${fmt(z.min)} a ${fmt(z.max)} · ${z.atZero} trazos en Z=0 · unidades del archivo`:'Sin geometría 3D compatible';}
 function setView3D(enabled: boolean) {
   if(enabled && !documentModel)return;
   if(selectedSheet){if(enabled)selectSpace('model');else return;}
   if(enabled && !view3D){view3D=new View3D(el('viewer-3d'));view3D.background(document.querySelector('.shell')!.classList.contains('light-view'));}
-  is3D=enabled;
+  is3D=enabled;el('wire-info').hidden=!enabled;
   el('viewport').dataset.view3d=String(enabled);
   document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command').forEach(n=>n.hidden=enabled);
   el('viewer').hidden=enabled;
@@ -94,7 +96,7 @@ function setView3D(enabled: boolean) {
   if(dock){dock.hidden=false;dock.inert=!!controller;}
   el('drawing-region').hidden=enabled||regions.length<2;
   if(enabled){
-    const count=view3D!.setShapes(shapesFromDocument(documentModel!));
+    const shapes=shapesFromDocument(documentModel!,{world3D:true});const count=view3D!.setShapes(shapes);updateWireInfo(shapes);
     notice(count?'Vista 3D de líneas y polilíneas. Los objetos no compatibles y los sólidos pueden no aparecer. Un plano sin cotas Z permanece plano.':'Este archivo no contiene líneas o polilíneas compatibles con la vista 3D.',!count);
   }else viewer.resize();
   navigation?.refresh();
@@ -207,7 +209,7 @@ function renderLayers() {
         viewer.renderer.setViewState(state);
       }
       if(selectedSheet && documentModel)paperView?.setSheet(documentModel,selectedSheet,false);
-      if(is3D && documentModel)view3D?.setShapes(shapesFromDocument(documentModel),false);
+      if(is3D && documentModel){const shapes=shapesFromDocument(documentModel,{world3D:true});view3D?.setShapes(shapes,false);updateWireInfo(shapes);}
       tools?.refresh();
     };
     if (layer.name === activeLayer) row.classList.add('active-layer');
@@ -229,7 +231,7 @@ async function openBim(file:File,companions:File[]){
     const {BimViewer}=await import('./bim-viewer');if(signal.aborted)throw new DOMException('Cancelado','AbortError');
     candidate=new BimViewer(host);const result=await candidate.load(file,companions,signal,message=>el('progress-text').textContent=message);
     closeBim();bim=candidate;bimHost=host;host.style.visibility='';el('viewer-bim').hidden=false;document.querySelector('.shell')!.classList.add('bim-mode');
-    el('viewer').hidden=true;el('viewer-paper').hidden=true;el('viewer-3d').hidden=true;el('empty').hidden=true;el('paper-info').hidden=true;el('drawing-region').hidden=true;el('view-3d-preset').hidden=true;el('layout-tabs').hidden=true;
+    el('wire-info').hidden=true;el('viewer').hidden=true;el('viewer-paper').hidden=true;el('viewer-3d').hidden=true;el('empty').hidden=true;el('paper-info').hidden=true;el('drawing-region').hidden=true;el('view-3d-preset').hidden=true;el('layout-tabs').hidden=true;
     document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command').forEach(n=>n.hidden=true);el('viewport').dataset.view3d='true';
     document.querySelector('.viewer-title span')!.textContent='Modelo 3D · Elementos y propiedades';el('tab').textContent=file.name;el('mode-badge').textContent='MODELO BIM · 3D';el('view-label').textContent=result.format+' · 3D';el('view-hint').textContent='Arrastrar: girar · Botón derecho: desplazar · Rueda: zoom';el('zoom-label').textContent='3D';el('coordinates').textContent='MODELO BIM · LOCAL';
     currentName=file.name;fileRevision++;el('context-name').textContent=file.name;el('status').textContent=`${result.format} · ${result.count} elementos · Procesamiento local`;
