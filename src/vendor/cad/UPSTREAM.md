@@ -10,3 +10,5 @@ MX CAD modifications: read native layout plot settings before freeing the DWG; s
 The runtime Vite alias and SHX dash-style pointer patch follow the upstream vite.worker.config.ts at this same commit. The worker is bundled locally with Vite; no drawing data is sent to a remote service.
 
 Additional MX CAD changes: frame-coalesced pointer navigation, bounded prepared paper scenes, cached block/curve geometry, conservative off-screen line checks, inherited block layer 0 and BYBLOCK lineweight, and DXF SOLID/TRACE corner ordering.
+
+The CAD wireframe adapter now applies stored planar elevations and arbitrary-axis OCS/INSERT transforms in its dedicated world-3D path; the 2D measurement adapter remains separate.

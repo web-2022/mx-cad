@@ -1,3 +1,4 @@
+import {planarPoint,insertedPoint} from './world-geometry.ts';
 import type { CadDocument, CadEntity, CadPoint3D } from './vendor/cad/index';
 export type Point = CadPoint3D;
 export interface Shape { id: string; type: string; layer: string; points: Point[]; nodes: Point[]; closed: boolean; origin: 'Plano' | 'Sesión'; approximate?: boolean }
@@ -29,7 +30,7 @@ export function validPolygon(p: Point[]) {
   return metrics({id:'',type:'',layer:'',points:p,nodes:p,closed:true,origin:'Sesión'}).area!>1e-12;
 }
 
-export function shapesFromDocument(doc: CadDocument): Shape[] {
+export function shapesFromDocument(doc: CadDocument,options:{world3D?:boolean}={}): Shape[] {
   const out:Shape[]=[];
   function walk(entities:CadEntity[], transform:(p:Point)=>Point, depth=0, inherited='0') {
     if(depth>12)return;
@@ -40,14 +41,14 @@ export function shapesFromDocument(doc: CadDocument): Shape[] {
       if(e.type==='INSERT'){
         const block=doc.blocks[e.blockName??e.name??'']; if(!block)continue;
         const base=block.basePoint??{x:0,y:0},pos=e.insertionPoint??{x:0,y:0},r=e.rotation??0,c=Math.cos(r),s=Math.sin(r);
-        walk(block.entities,p=>{const x=(p.x-base.x)*(e.scale?.x??1),y=(p.y-base.y)*(e.scale?.y??1);return transform({x:pos.x+x*c-y*s,y:pos.y+x*s+y*c,z:(pos.z??0)+((p.z??0)-(base.z??0))*(e.scale?.z??1)});},depth+1,layer);continue;
+        walk(block.entities,p=>{if(options.world3D)return transform(insertedPoint(p,base,e));const x=(p.x-base.x)*(e.scale?.x??1),y=(p.y-base.y)*(e.scale?.y??1);return transform({x:pos.x+x*c-y*s,y:pos.y+x*s+y*c,z:(pos.z??0)+((p.z??0)-(base.z??0))*(e.scale?.z??1)});},depth+1,layer);continue;
       }
       let points:Point[]=[],nodes:Point[]=[],closed=!!e.isClosed,approximate=false;
       if(e.type==='LINE'&&e.startPoint&&e.endPoint)points=[e.startPoint,e.endPoint];
       else if(e.type==='POINT') { const p=e.insertionPoint??e.position as Point|undefined??e.startPoint??e.vertices?.[0];if(p)points=[p]; }
       else if(['LWPOLYLINE','POLYLINE','POLYLINE_2D','POLYLINE_3D'].includes(e.type)||e.kind==='polyline'){
         const vertices=e.vertices??e.points??[];nodes=vertices;
-        closed=closed||!!((e.flag??0)&1);
+        closed=closed||!!((e.flag??0)&(options.world3D&&e.type==='LWPOLYLINE'&&doc.format==='dwg'?512:1));
         for(let i=0;i<vertices.length;i++){
           const a=vertices[i],b=vertices[(i+1)%vertices.length],bulge=(a as Point & {bulge?:number}).bulge??0;
           points.push(a);
@@ -63,9 +64,10 @@ export function shapesFromDocument(doc: CadDocument): Shape[] {
         for(let i=0;i<=steps;i++)points.push({x:e.center.x+e.radius*Math.cos(start+sweep*i/steps),y:e.center.y+e.radius*Math.sin(start+sweep*i/steps),z:e.center.z??0});
         nodes=closed?[e.center]:[points[0],points.at(-1)!,e.center];approximate=true;
       }
+      if(options.world3D&&['3DFACE','SOLID','TRACE'].includes(e.type)){const v=e.vertices??e.points??[];points=v.length===4&&e.type!=='3DFACE'?[v[0],v[1],v[3],v[2]]:v;nodes=points;closed=true;}
       if(!points.length||points.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)))continue;
       if(!nodes.length)nodes=points;
-      out.push({id:`file-${out.length}`,type:e.type,layer,points:points.map(transform),nodes:nodes.map(transform),closed,origin:'Plano',approximate});
+      out.push({id:`file-${out.length}`,type:e.type,layer,points:points.map(p=>transform(options.world3D?planarPoint(p,e):p)),nodes:nodes.map(p=>transform(options.world3D?planarPoint(p,e):p)),closed,origin:'Plano',approximate});
     }
   }
   walk(doc.entities,p=>({...p}));return out;
