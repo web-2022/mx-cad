@@ -28,7 +28,7 @@ export class PaperView {
     this.canvas.addEventListener('wheel',e=>{e.preventDefault();this.zoom(Math.exp(-Math.max(-200,Math.min(200,e.deltaY))*.002),true);},{passive:false});
     this.observer=new ResizeObserver(()=>this.queueDraw());this.observer.observe(host);
   }
-  setSheet(doc:CadDocument,sheet:DrawingSheet,fit=true){if(doc!==this.doc||!fit)this.cache.clear();this.doc=doc;this.sheet=sheet;if(fit)this.fit();else this.draw();}
+  setSheet(doc:CadDocument,sheet:DrawingSheet,fit=true){if(doc!==this.doc){this.cache.clear();this.renderer.clear();}else if(!fit)this.cache.clear();this.doc=doc;this.sheet=sheet;if(fit)this.fit();else this.draw();}
   fit(){
     const s=this.sheet;if(!s||!this.doc)return;
     const bounds=s.width&&s.height?{minX:s.origin.x,minY:s.origin.y,maxX:s.origin.x+s.width,maxY:s.origin.y+s.height}:computeCadDocumentBounds({...this.doc,entities:s.entities.filter(e=>e.type!=='VIEWPORT'),savedView:undefined,pages:undefined});

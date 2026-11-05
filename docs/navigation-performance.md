@@ -6,6 +6,7 @@ La barra derecha se adapta al contexto: Model permite seleccionar, desplazar y d
 
 - Los eventos de movimiento y rueda se agrupan por frame. Exportar fuerza el dibujo final.
 - La selección y el snap consultan un índice espacial conservador; las entidades grandes permanecen en una lista de respaldo y no se descartan.
+- Las líneas opacas consecutivas del mismo estilo se agrupan en trazados de Canvas, manteniendo el orden respecto a otras entidades. Transparencias y estilos complejos usan el recorrido individual.
 - El movimiento en modo Seleccionar/Pan no busca puntos de ajuste que no se utilizan.
 - Las presentaciones reutilizan escenas, transformaciones de bloques y muestreo de curvas. La caché tiene límites por hoja y número de entidades y se invalida al cambiar capas o referencias.
 - Se evita ajustar el modelo oculto al alternar hojas y se dibuja cada escena una sola vez por composición.

@@ -131,6 +131,7 @@ export class CadCanvasRenderer {
   private fitScale = 1;
   private dpr = 1;
   private prepared=new WeakMap<CadDocument,{document:CadDocument;curves:WeakMap<CadEntity,CadPoint2D[]>;inserts:WeakMap<CadEntity,CadEntity[]>;hatches:WeakMap<CadEntity,ReturnType<typeof hatchBoundaries>>}>();
+  private lineGroups=new WeakMap<CadDocument,CadEntity[][]>();
   private frame=0;
   private curveCache=new WeakMap<CadEntity,CadPoint2D[]>();
   private insertCache=new WeakMap<CadEntity,CadEntity[]>();
@@ -165,6 +166,7 @@ export class CadCanvasRenderer {
   }
 
   clear(): void {
+    this.imageCache.clear();this.prepared=new WeakMap();this.lineGroups=new WeakMap();
     this.sourceDocument = undefined;
     this.document = undefined;
     this.bounds = emptyBounds();
@@ -175,6 +177,7 @@ export class CadCanvasRenderer {
   }
 
   setDocument(document: CadDocument, view?:ViewState): void {
+    if(!view){this.lineGroups.delete(document);if(this.sourceDocument!==document)this.imageCache.clear();}
     this.sourceDocument=document;
     let cached=view?this.prepared.get(document):undefined;
     if(!cached){cached={document:createCadSceneDocument(document),curves:new WeakMap(),inserts:new WeakMap(),hatches:new WeakMap()};if(view)this.prepared.set(document,cached);}
@@ -311,13 +314,34 @@ export class CadCanvasRenderer {
     this.clearCanvas();
     if (this.document) {
       if (this.opts.showPageBounds && this.document.pages?.length) this.drawPageBounds(this.document);
-      for (const entity of this.document.entities) this.drawEntityTracked(entity, 0);
+      let groups=this.lineGroups.get(this.document);if(!groups){groups=this.groupLines(this.document.entities);this.lineGroups.set(this.document,groups);}
+      for(const group of groups){if(group.length>1)this.drawLineBatch(group);else this.drawEntityTracked(group[0],0);}
     }
     this.stats.renderElapsedMs = performance.now() - started;
     this.onStats?.(this.getStats());
     return this.getStats();
   }
 
+  private groupLines(entities:CadEntity[]){
+    const groups:CadEntity[][]=[];let current:CadEntity[]=[],last='';
+    const opaque=(color:unknown)=>color===undefined||color===null||typeof color==='number'||typeof color==='string'&&/^#[a-f0-9]{6}$/i.test(color);
+    for(const e of entities){const layer=this.lookupLayer(e.layer);
+      const eligible=e.type==='LINE'&&e.isVisible!==false&&layerVisible(layer)&&Number(e.opacity??1)===1&&isFinitePoint(e.startPoint)&&isFinitePoint(e.endPoint)&&!cadEntityWorldStrokeWidth(e)&&opaque(e.color)&&opaque(e.trueColor)&&opaque(layer?.color)&&!resolveCadLinePattern(e,this.document);
+      if(!eligible){if(current.length)groups.push(current);current=[];last='';groups.push([e]);continue;}
+      const key=JSON.stringify([e.layer,e.colorIndex,e.color,e.trueColor,e.lineweight]);
+      if(key!==last&&current.length){groups.push(current);current=[];}last=key;current.push(e);
+    }
+    if(current.length)groups.push(current);return groups;
+  }
+  private drawLineBatch(lines:CadEntity[]){
+    this.stats.total+=lines.length;this.stats.byType.LINE=(this.stats.byType.LINE??0)+lines.length;
+    this.beginStyledPath(lines[0],false,false);const ctx=this.ctx,w=this.cssWidth,h=this.cssHeight,scale=this.view.scale,cx=this.view.centerX,cy=this.view.centerY;let drawn=0;
+    for(const e of lines){const a=e.startPoint!,b=e.endPoint!,ax=w/2+(a.x-cx)*scale,ay=h/2-(a.y-cy)*scale,bx=w/2+(b.x-cx)*scale,by=h/2-(b.y-cy)*scale;
+      if((ax<-130&&bx<-130)||(ax>w+130&&bx>w+130)||(ay<-130&&by<-130)||(ay>h+130&&by>h+130)){this.stats.skipped++;continue;}
+      ctx.moveTo(ax,ay);ctx.lineTo(bx,by);drawn++;
+    }
+    ctx.stroke();ctx.restore();this.stats.drawn+=drawn;
+  }
   private get cssWidth(): number { return this.canvas.clientWidth || 1; }
   private get cssHeight(): number { return this.canvas.clientHeight || 1; }
 
@@ -520,7 +544,7 @@ export class CadCanvasRenderer {
         this.insertCache.set(e,children);
       }
       for(const child of children)this.drawEntityTracked(child,depth+1);
-      for(const attr of e.attribs??[])this.drawEntityTracked(attr,depth+1);
+      for(const attr of e.attribs??[])this.drawEntityTracked(applyByBlockLineTypeInheritance(applyByBlockColorInheritance(attr,e,this.document,{foreground:this.opts.foreground,background:this.opts.background,contrastMode:this.opts.contrastMode}),e,this.document),depth+1);
       return;
     }
     const p = e.insertionPoint;
