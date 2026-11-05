@@ -14,6 +14,7 @@ scope.onmessage=async(event:MessageEvent<{bytes:ArrayBuffer;wasmPath:string}>)=>
       if(!items.has(id)){
         const line=api.GetLine(model,id),properties:Record<string,string>={};
         for(const [key,raw]of Object.entries(line??{})){
+          if(key==='expressID'||key==='type'||(raw as {type?:number})?.type===5)continue;
           const value=(raw as {value?:unknown})?.value;
           if(['string','number','boolean'].includes(typeof value))properties[key]=String(value);
           else if(['string','number','boolean'].includes(typeof raw))properties[key]=String(raw);

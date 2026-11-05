@@ -68,7 +68,7 @@ const viewer = new CadViewer({
   loaders: [new LayerAwareDxfLoader()],
   canvasOptions: { background: '#111d31', foreground: '#e4ebf3', contrastMode: 'adaptive', showUnsupportedMarkers: true },
   onLoadProgress(progress) { el('progress-text').textContent = `Abriendo plano… ${progress.percent ?? ''}${progress.percent != null ? '%' : ''}`; },
-  onViewChange(event) { if(selectedSheet||is3D)return; const zoom = Math.round(zoomReferenceScale ? event.view.scale / zoomReferenceScale * 100 : event.zoomPercent); el('coordinates').textContent = `ZOOM ${zoom}%  •  LOCAL`; el('zoom-label').textContent = `${zoom}%`; tools?.redraw(); }
+  onViewChange(event) { if(bim||selectedSheet||is3D)return; const zoom = Math.round(zoomReferenceScale ? event.view.scale / zoomReferenceScale * 100 : event.zoomPercent); el('coordinates').textContent = `ZOOM ${zoom}%  •  LOCAL`; el('zoom-label').textContent = `${zoom}%`; tools?.redraw(); }
 });
 
 function setView3D(enabled: boolean) {
@@ -213,7 +213,7 @@ function renderLayers() {
 
 function closeBim(){
   bim?.destroy();bim=undefined;bimHost?.remove();bimHost=undefined;
-  el('viewer-bim').hidden=true;document.querySelector('.shell')!.classList.remove('bim-mode');el('layout-tabs').hidden=false;
+  el('viewer-bim').hidden=true;document.querySelector('.shell')!.classList.remove('bim-mode');el('layout-tabs').hidden=false;document.querySelector('.viewer-title span')!.textContent='Proyección superior · Geometría y capas';
 }
 async function openBim(file:File,companions:File[]){
   if(!file.size){notice('El archivo está vacío.',true);return;}
@@ -226,7 +226,7 @@ async function openBim(file:File,companions:File[]){
     closeBim();bim=candidate;bimHost=host;host.style.visibility='';el('viewer-bim').hidden=false;document.querySelector('.shell')!.classList.add('bim-mode');
     el('viewer').hidden=true;el('viewer-paper').hidden=true;el('viewer-3d').hidden=true;el('empty').hidden=true;el('paper-info').hidden=true;el('drawing-region').hidden=true;el('view-3d-preset').hidden=true;el('layout-tabs').hidden=true;
     document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command,.cad-dock').forEach(n=>n.hidden=true);el('viewport').dataset.view3d='true';
-    el('tab').textContent=file.name;el('mode-badge').textContent='MODELO BIM · 3D';el('view-label').textContent=result.format+' · 3D';el('view-hint').textContent='Arrastrar: girar · Botón derecho: desplazar · Rueda: zoom';el('zoom-label').textContent='3D';el('coordinates').textContent='MODELO BIM · LOCAL';
+    document.querySelector('.viewer-title span')!.textContent='Modelo 3D · Elementos y propiedades';el('tab').textContent=file.name;el('mode-badge').textContent='MODELO BIM · 3D';el('view-label').textContent=result.format+' · 3D';el('view-hint').textContent='Arrastrar: girar · Botón derecho: desplazar · Rueda: zoom';el('zoom-label').textContent='3D';el('coordinates').textContent='MODELO BIM · LOCAL';
     currentName=file.name;el('context-name').textContent=file.name;el('status').textContent=`${result.format} · ${result.count} elementos · Procesamiento local`;
     candidate.background(document.querySelector('.shell')!.classList.contains('light-view'));requestAnimationFrame(()=>bim?.fit());
     notice('Modelo local. Selecciona elementos para ver sus propiedades básicas. NWD/NWC/NWF requieren conversión previa a IFC o glTF/GLB.');
@@ -334,7 +334,7 @@ el('export').onclick = async () => {
   try {
     bim?.render();
     const canvas = bim ? bim.canvas : selectedSheet ? paperView!.canvas : is3D ? view3D!.canvas : await tools!.composite(await viewer.captureCanvas());
-    const link = document.createElement('a'); link.href = canvas.toDataURL('image/png'); link.download = currentName.replace(/\.(dwg|dxf)$/i, '') + (selectedSheet?'_'+selectedSheet.name.replace(/[^a-z0-9_-]/gi,'_'):'') + '.png'; document.body.append(link); link.click(); link.remove();
+    const link = document.createElement('a'); link.href = canvas.toDataURL('image/png'); link.download = currentName.replace(/\.(dwg|dxf|ifc|glb|gltf)$/i, '') + (selectedSheet?'_'+selectedSheet.name.replace(/[^a-z0-9_-]/gi,'_'):'') + '.png'; document.body.append(link); link.click(); link.remove();
   } catch (error) { notice(`No se pudo exportar la vista: ${String(error)}`, true); }
 };
 el('demo').onclick = async () => { try { const response = await fetch(new URL('ejemplo.dxf', document.baseURI)); if (!response.ok) throw new Error('Archivo de ejemplo no disponible'); await open(new File([await response.arrayBuffer()], 'ejemplo.dxf')); } catch (e) { notice(String(e), true); } };
