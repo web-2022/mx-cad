@@ -1,0 +1,20 @@
+name: Medir navegación CAD
+on:
+  push:
+    branches: [feat/navigation-performance]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - run: npm run build
+      - run: node scripts/navigation-benchmark.mjs
