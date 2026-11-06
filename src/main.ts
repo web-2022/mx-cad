@@ -34,7 +34,7 @@ let controller: AbortController | undefined;
 let documentModel: CadDocument | undefined;
 let currentName = '';
 let originalFile:File|undefined;
-let cursorFrame=0;let cursorEvent:PointerEvent|undefined;
+let activePointer=0;let cursorFrame=0;let cursorEvent:PointerEvent|undefined;
 let workElevation:number|undefined;
 let tools: CadTools | undefined;
 const sessionLayers = new Map<string, { name: string; color: string; isVisible: boolean }>();
@@ -103,7 +103,7 @@ function setView3D(enabled: boolean) {
   if(enabled){
     const shapes=shapesFromDocument(documentModel!,{world3D:true});const count=view3D!.setShapes(shapes);updateWireInfo(shapes);
     notice(count?'Vista 3D de líneas y polilíneas. Los objetos no compatibles y los sólidos pueden no aparecer. Un plano sin cotas Z permanece plano.':'Este archivo no contiene líneas o polilíneas compatibles con la vista 3D.',!count);
-  }else {viewer.resize();drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),topAxes);}
+  }else {viewer.resize();const m=documentModel?.savedView?.sceneTransform;drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),m&&documentModel?.savedView?.sceneTransformApplied!==false?{x:{x:m.a,y:m.b},y:{x:m.c,y:m.d},z:{x:0,y:0}}:topAxes);}
   navigation?.refresh();
 }
 
@@ -353,7 +353,7 @@ viewport.addEventListener('dragover', e => { e.preventDefault(); viewport.classL
 viewport.addEventListener('dragleave', e => { if (!viewport.contains(e.relatedTarget as Node)) viewport.classList.remove('dragging'); });
 viewport.addEventListener('drop', e => { e.preventDefault(); viewport.classList.remove('dragging'); const files=Array.from(e.dataTransfer?.files??[]);if(files.length)openFiles(files); });
 window.addEventListener('keydown', e => {
-  if(e.key==='Escape'){tools?.escape();bim?.escape();const n=el('notice');if(!n.classList.contains('error'))n.hidden=true;}
+  if(e.key==='Escape'){const canvas=navigationAdapter().canvas;canvas.dispatchEvent(new PointerEvent('pointercancel',{pointerId:activePointer,bubbles:true}));if(canvas.hasPointerCapture(activePointer))canvas.releasePointerCapture(activePointer);if(el('viewport').hasPointerCapture(activePointer))el('viewport').releasePointerCapture(activePointer);tools?.escape();bim?.escape();const n=el('notice');if(!n.classList.contains('error'))n.hidden=true;}
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); selectFile(); }
   else if (!(e.target instanceof HTMLInputElement) && (active||!!bim) && !controller && e.key.toLowerCase() === 'f') navigation?.change(()=>fitDrawing());
 });
@@ -407,3 +407,5 @@ viewport.addEventListener('pointermove',e=>{cursorEvent=e;if(cursorFrame)return;
  const f=(n:number|undefined)=>n===undefined?'—':n.toLocaleString('es-PE',{minimumFractionDigits:3,maximumFractionDigits:3});el('cursor-coordinates').textContent=selectedSheet?`${label}: ${f(p?.x)} / ${f(p?.y)} · Elevación: —`:`${label} · Norte: ${f(p?.y)} | Este: ${f(p?.x)} | Elevación: ${f(p?.z)} · ${el('prop-units').textContent}`;
  });});
 viewport.addEventListener('pointerleave',()=>{if(cursorFrame)cancelAnimationFrame(cursorFrame);cursorFrame=0;el('cursor-coordinates').textContent='Coordenadas del dibujo · Norte: — | Este: — | Elevación: —';});
+
+viewport.addEventListener('pointerdown',e=>{activePointer=e.pointerId;},true);

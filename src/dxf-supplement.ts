@@ -58,7 +58,7 @@ export function supplementDxf(doc:CadDocument,text:string){
     e.layoutName=str(p,410);e.ownerBlockRecordHandle=str(p,330);e.isInPaperSpace=num(p,67)===1;
     e.lineweight=num(p,370,-1);e.lineType=str(p,6)??e.lineType;e.lineTypeScale=num(p,48,1);e.colorIndex=num(p,62,256);
     if(str(p,420)!==undefined)e.trueColor=num(p,420);
-    if(str(p,440)!==undefined&&(num(p,440)>>>24)===2)e.opacity=(num(p,440)&255)/255;
+    if(str(p,440)!==undefined&&(num(p,440)>>>24)===2)e.opacity=1-(num(p,440)&255)/255;
     e.textStyleName=str(p,7);
     if(r.type==='ATTRIB'||r.type==='ATTDEF'){e.attributeTag=str(p,2);e.attributeFlags=num(p,70);if(num(p,70)&1)e.isVisible=false;}
     if(r.type==='INSERT')insert=e;

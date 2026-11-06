@@ -8,14 +8,18 @@ export function patchDxf(bytes:Uint8Array,edits:Map<string,ColorEdit>,drawings:S
   const lines=text.replace(/\r\n?/g,'\n').split('\n'),records:{code:number;value:string}[]=[];
   for(let i=0;i+1<lines.length;i+=2){if(!/^\s*\d+\s*$/.test(lines[i]))throw Error('DXF ASCII inválido');records.push({code:Number(lines[i]),value:lines[i+1]});}
   if(!records.some(r=>r.code===0&&r.value.trim()==='EOF'))throw Error('El convertidor no produjo un DXF completo');
+  const versionAt=records.findIndex(r=>r.code===9&&r.value.trim()==='$ACADVER'),version=Number(records[versionAt+1]?.value.trim().replace('AC',''));
+  if(versionAt>=0&&version<1018&&[...edits.values()].some(e=>e.mode==='EXPLICIT'))throw Error('Este DXF es anterior a 2004 y no admite color RGB exacto. Guarda el original como DXF 2004 o posterior antes de editar colores explícitos. BYLAYER/BYBLOCK sí son compatibles.');
+  if(versionAt>=0&&version<1018&&layers.length)throw Error('Las capas nuevas usan color RGB. Para conservarlo, utiliza un DXF 2004 o posterior; puedes descargar los trazos por separado.');
+  const legacy=versionAt>=0&&version<1015;
   const result:typeof records=[];let section='',table='',foundEntities=false,foundLayer=false;const applied=new Set<string>();
-  const add=(values:(string|number)[])=>{for(let i=0;i<values.length;i+=2)result.push({code:Number(values[i]),value:String(values[i+1])});};
+  const add=(values:(string|number)[])=>{for(let i=0;i<values.length;i+=2){if(legacy&&values[i]===100)continue;result.push({code:Number(values[i]),value:String(values[i+1])});}};
   let next=1;for(const r of records)if([5,105].includes(r.code)&&/^[0-9a-f]+$/i.test(r.value.trim()))next=Math.max(next,parseInt(r.value,16)+1);
   const newHandle=()=> (next++).toString(16).toUpperCase();
   const utf=(s:string)=>{const b=new TextEncoder().encode(s);return Array.from(b,v=>String.fromCharCode(v)).join('');};
   for(let i=0;i<records.length;){const start=i++;while(i<records.length&&records[i].code!==0)i++;let block=records.slice(start,i);const type=block[0].value.trim();
     if(type==='SECTION')section=block.find(r=>r.code===2)?.value.trim()??'';
-    if(type==='TABLE')table=block.find(r=>r.code===2)?.value.trim()??'';
+    if(type==='TABLE'){table=block.find(r=>r.code===2)?.value.trim()??'';if(table==='LAYER'){block=block.map(r=>r.code===70?{...r,value:String(Number(r.value)+layers.length)}:r);}}
     if(section==='TABLES'&&table==='LAYER'&&type==='ENDTAB'){
       for(const l of layers)add([0,'LAYER',5,newHandle(),100,'AcDbSymbolTableRecord',100,'AcDbLayerTableRecord',2,utf(l.name),70,0,62,l.isVisible?7:-7,420,parseInt(l.color.slice(1),16),6,'CONTINUOUS']);foundLayer=true;
     }
