@@ -38,13 +38,14 @@ export class View3D {
       if(d.pan){this.pan.x+=dx;this.pan.y+=dy;}else{this.yaw+=dx*.008;this.pitch=Math.max(-Math.PI/2,Math.min(Math.PI/2,this.pitch+dy*.008));}
       this.queueDraw();
     };
-    this.canvas.onpointerup=e=>{if(this.mode==='select'&&this.clickStart&&Math.hypot(e.clientX-this.clickStart.x,e.clientY-this.clickStart.y)<4){this.cursorPoint(e.clientX,e.clientY);this.selected=this.hitShape;this.host.parentElement?.dispatchEvent(new CustomEvent('mx:selectshape',{detail:this.selected}));this.draw();}this.clickStart=undefined;this.drag=undefined;};this.canvas.onpointercancel=this.canvas.onlostpointercapture=()=>{this.clickStart=undefined;this.drag=undefined;};
+    this.canvas.onpointerup=e=>{if(e.button===0&&this.mode==='select'&&this.clickStart&&Math.hypot(e.clientX-this.clickStart.x,e.clientY-this.clickStart.y)<4){this.cursorPoint(e.clientX,e.clientY);this.selected=this.hitShape;this.host.parentElement?.dispatchEvent(new CustomEvent('mx:selectshape',{detail:this.selected}));this.draw();}this.clickStart=undefined;this.drag=undefined;};this.canvas.onpointercancel=this.canvas.onlostpointercapture=()=>{this.clickStart=undefined;this.drag=undefined;};
     this.canvas.oncontextmenu=e=>e.preventDefault();
     this.canvas.addEventListener('wheel',e=>{e.preventDefault();this.zoom(Math.exp(-Math.max(-200,Math.min(200,e.deltaY))*.002));},{passive:false});
     this.observer=new ResizeObserver(()=>this.draw());this.observer.observe(host);
   }
   setShapes(shapes: Shape[],fit=true) {
-    this.shapes=shapes.map(s=>({...s,points:s.points.filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)&&Number.isFinite(p.z??0))})).filter(s=>s.points.length);
+    const selectedId=this.selected?.id;this.shapes=shapes.map(s=>({...s,points:s.points.filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)&&Number.isFinite(p.z??0))})).filter(s=>s.points.length);
+    this.selected=this.shapes.find(s=>s.id===selectedId);
     if(fit){
       let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
       for(const s of this.shapes)for(const p of s.points){minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);minZ=Math.min(minZ,p.z??0);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);maxZ=Math.max(maxZ,p.z??0);}
