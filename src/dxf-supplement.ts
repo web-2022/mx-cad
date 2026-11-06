@@ -1,11 +1,11 @@
 import type { CadDocument, CadEntity, CadPoint3D } from './vendor/cad/index';
-import { separateDrawingSpaces, record } from './drawing-spaces';
+import { separateDrawingSpaces, record } from './drawing-spaces.ts';
 
 export interface DxfPair {code:number;value:string}
 export interface DxfRecord {type:string;section:string;pairs:DxfPair[]}
 export function scanDxf(text:string):DxfRecord[]{
   const lines=text.replace(/\r\n?/g,'\n').split('\n'),out:DxfRecord[]=[];let section='',current:DxfRecord|undefined;
-  for(let i=0;i+1<lines.length;i+=2){const code=Number(lines[i].trim()),value=lines[i+1].trim();if(!Number.isFinite(code))continue;
+  for(let i=0;i+1<lines.length;i+=2){const code=Number(lines[i].trim()),value=[1,3].includes(code)?lines[i+1]:lines[i+1].trim();if(!Number.isFinite(code))continue;
     if(code===0&&value==='SECTION'){section=lines[i+3]?.trim()??'';i+=2;current=undefined;continue;}
     if(code===0&&value==='ENDSEC'){section='';current=undefined;continue;}
     if(code===0){current={type:value,section,pairs:[]};out.push(current);}else current?.pairs.push({code,value});

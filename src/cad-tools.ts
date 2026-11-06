@@ -83,14 +83,13 @@ export class CadTools {
     this.index=new ShapeIndex(this.shapes);if(this.selected&&(this.selected.origin==='Plano'||!this.layerOptions.visible(this.selected.layer)))this.select();this.redraw();this.sync();}
   private pointer(e:PointerEvent){const r=this.viewer.canvas.getBoundingClientRect();return this.viewer.renderer.screenToWorld({x:e.clientX-r.left,y:e.clientY-r.top});}
   private tolerance(){const a=this.viewer.renderer.screenToWorld({x:0,y:0}),b=this.viewer.renderer.screenToWorld({x:10,y:0});return distance(a,b);}
-  private all(){return [...this.shapes,...this.drawings.filter(s=>this.layerOptions.visible(s.layer))];}
   private snap(p:Point):Point{
     this.snapped=undefined;let best=this.tolerance(),found:Point|undefined;
     const candidates=this.candidates(p,best);
     if(this.snapPoint){for(const s of candidates)for(const n of s.nodes){const d=distance(p,n);if(d<best){best=d;found={...n,z:this.worldShapes.get(s.id)?.nodes[s.nodes.indexOf(n)]?.z??n.z};}}
       for(const n of this.pending){const d=distance(p,n);if(d<best){best=d;found=n;}}}
     // Prefer an exact vertex over a segment projection when both are in range.
-    if(!found&&this.snapLine)for(const s of this.all())for(const [a,b]of segments(s)){const q=closest(p,a,b),d=distance(p,q);if(d<best){best=d;found=q;}}
+    if(!found&&this.snapLine)for(const s of candidates)for(const [a,b]of this.edges(s)){const q=closest(p,a,b),d=distance(p,q);if(d<best){best=d;found=q;}}
     if(found){this.snapped=found;return {...found};}return {...p,z:this.spatial()?undefined:0};
   }
   setNavigationMode(mode:'select'|'pan'){this.setMode(mode);}
