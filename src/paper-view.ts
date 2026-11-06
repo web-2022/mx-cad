@@ -40,6 +40,7 @@ export class PaperView {
   zoom(factor:number,deferred=false){this.view.scale=Math.max(1e-8,Math.min(1e8,this.view.scale*factor));if(deferred)this.queueDraw();else this.draw();}
   private queueDraw(){if(!this.frame)this.frame=requestAnimationFrame(()=>{this.frame=0;this.draw();});}
   private screen(p:{x:number;y:number}){return{x:this.host.clientWidth/2+(p.x-this.view.centerX)*this.view.scale,y:this.host.clientHeight/2-(p.y-this.view.centerY)*this.view.scale};}
+  paperPoint(x:number,y:number){return {x:this.view.centerX+(x-this.host.clientWidth/2)/this.view.scale,y:this.view.centerY-(y-this.host.clientHeight/2)/this.view.scale};}
   getState(){return {...this.view};}
   setState(view:{centerX:number;centerY:number;scale:number}){this.view={...view};this.draw();}
   zoomWindow(box:{x:number;y:number;width:number;height:number}){const w=this.host.clientWidth,h=this.host.clientHeight;this.view.centerX+=(box.x+box.width/2-w/2)/this.view.scale;this.view.centerY-=(box.y+box.height/2-h/2)/this.view.scale;this.view.scale*=Math.min(w/box.width,h/box.height);this.draw();}

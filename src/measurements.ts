@@ -1,0 +1,3 @@
+import type {Point} from './geometry';
+export function angle(a:Point,vertex:Point,b:Point,spatial=false){const u=[a.x-vertex.x,a.y-vertex.y,spatial?(a.z??0)-(vertex.z??0):0],v=[b.x-vertex.x,b.y-vertex.y,spatial?(b.z??0)-(vertex.z??0):0];const den=Math.hypot(...u)*Math.hypot(...v);return den>1e-12?Math.acos(Math.max(-1,Math.min(1,u.reduce((n,x,i)=>n+x*v[i],0)/den)))*180/Math.PI:undefined;}
+export function lineAngle(a:Point,b:Point,c:Point,d:Point,spatial=false){const value=angle({x:b.x-a.x,y:b.y-a.y,z:(b.z??0)-(a.z??0)},{x:0,y:0,z:0},{x:d.x-c.x,y:d.y-c.y,z:(d.z??0)-(c.z??0)},spatial);return value===undefined?undefined:Math.min(value,180-value);}

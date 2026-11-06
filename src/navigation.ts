@@ -51,7 +51,7 @@ export class Navigation {
     this.dock.hidden=false;this.dock.dataset.context=a.context;if(a.context!=='model')this.viewport.classList.remove('drawing-mode');
     const is3D=a.context==='wire'||a.context==='bim',mode=a.mode?.()??this.mode;
     for(const id of ['tool-select','tool-pan','nav-orbit','nav-plus','nav-minus','nav-fit','nav-window','nav-previous','nav-top','nav-front','nav-side','nav-iso']){
-      const b=document.getElementById(id) as HTMLButtonElement;b.disabled=!a.enabled||(id==='tool-select'&&(a.context==='paper'||a.context==='wire'))||(id==='nav-orbit'&&!is3D)||(['nav-front','nav-side','nav-iso'].includes(id)&&!is3D)||(id==='nav-previous'&&!this.history.has(a.key));
+      const b=document.getElementById(id) as HTMLButtonElement;b.disabled=!a.enabled||(id==='tool-select'&&(a.context==='paper'||a.context==='wire'))||(id==='nav-orbit'&&a.context==='paper')||(['nav-front','nav-side','nav-iso'].includes(id)&&a.context==='paper')||(id==='nav-previous'&&!this.history.has(a.key));
       if(['nav-top','nav-front','nav-side','nav-iso'].includes(id))b.setAttribute('aria-pressed',String(id==='nav-'+this.view));
       if(id==='tool-select')b.setAttribute('aria-pressed',String(mode==='select'&&!this.box));if(id==='tool-pan')b.setAttribute('aria-pressed',String(mode==='pan'&&!this.box));if(id==='nav-orbit')b.setAttribute('aria-pressed',String(mode==='orbit'&&!this.box));if(id==='nav-window')b.setAttribute('aria-pressed',String(this.box));
     }

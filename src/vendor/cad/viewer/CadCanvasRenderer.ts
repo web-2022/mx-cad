@@ -1,3 +1,4 @@
+import {wrapText} from '../../../text-layout';
 import {solidVertices} from '../../../solid-order';
 import { hatchBoundaries } from '../../../hatch-geometry';
 import { applyByBlockColorInheritance, layerVisible, resolveCadColor, resolveFillColor, type CadColorContrastMode } from '../core/color.js';
@@ -704,23 +705,26 @@ export class CadCanvasRenderer {
     const generationFlag = Number(e.generationFlag ?? 0);
     const xScale = Number(e.xScale ?? 1);
     ctx.scale((generationFlag & 2 ? -1 : 1) * (Number.isFinite(xScale) && Math.abs(xScale) > 1e-9 ? Math.abs(xScale) : 1), generationFlag & 4 ? -1 : 1);
-    const pixelHeight = Math.max(4, Math.min(256, Math.abs(height) * this.view.scale));
+    const pixelHeight = Math.abs(height) * this.view.scale;
     ctx.font = `${pixelHeight}px ${typeof e.fontFamily==='string'?JSON.stringify(e.fontFamily)+',':''} ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
     ctx.fillStyle = resolveCadColor(e, this.document, { foreground: this.opts.foreground, background: this.opts.background, trueColorByteOrder: this.opts.trueColorByteOrder, contrastMode: this.opts.contrastMode, minColorContrast: this.opts.minColorContrast });
     ctx.globalAlpha = clamp(Number(e.opacity ?? 1), 0, 1);
-    const halign = Number(e.halign ?? 0);
-    const valign = Number(e.valign ?? 0);
+    const mtext=e.type==='MTEXT',attachment=Number(e.attachmentPoint??1);
+    const halign = mtext?(attachment-1)%3:Number(e.halign ?? 0);
+    const valign = mtext?3:Number(e.valign ?? 0);
     ctx.textAlign = halign === 1 || halign === 4 ? 'center' : halign === 2 ? 'right' : 'left';
     ctx.textBaseline = valign === 1 ? 'bottom' : valign === 2 ? 'middle' : valign === 3 ? 'top' : 'alphabetic';
-    for (const [index,line]of text.split(/\r?\n/g).entries()) {
+    const lines=wrapText(text,mtext?Number(e.rectWidth??e.width??0)*this.view.scale:0,t=>ctx.measureText(t).width),spacing=pixelHeight*1.22*Number(e.lineSpacing??1);
+    const offset=mtext?(Math.floor((attachment-1)/3)===1?-(lines.length*spacing)/2:Math.floor((attachment-1)/3)===2?-lines.length*spacing:0):0;
+    for (const [index,line]of lines.entries()) {
       const glyph=typeof e.fontFile==='string'&&/\.shx$/i.test(e.fontFile)?this.opts.shxGlyphResolver?.resolveText(line,e.fontFile):undefined;
       if(glyph?.polylines.length){
         const points=glyph.polylines.flat(),maxY=Math.max(...points.map(p=>p.y)),minY=Math.min(...points.map(p=>p.y)),minX=Math.min(...points.map(p=>p.x)),maxX=Math.max(...points.map(p=>p.x));
         const k=pixelHeight/Math.max(maxY-minY,1e-6),dx=ctx.textAlign==='center'?-(maxX+minX)/2:ctx.textAlign==='right'?-maxX:-minX;
         const baseline=valign===1?minY:valign===2?(minY+maxY)/2:valign===3?maxY:0;
         ctx.strokeStyle=ctx.fillStyle;ctx.lineWidth=1;ctx.beginPath();
-        for(const path of glyph.polylines)path.forEach((p,i)=>{const x=(p.x+dx)*k,y=-(p.y-baseline)*k+index*pixelHeight*1.22;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);});ctx.stroke();
-      }else ctx.fillText(line,0,index*pixelHeight*1.22);
+        for(const path of glyph.polylines)path.forEach((p,i)=>{const x=(p.x+dx)*k,y=-(p.y-baseline)*k+offset+index*spacing;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);});ctx.stroke();
+      }else ctx.fillText(line,0,offset+index*spacing);
     }
     ctx.restore();
     this.stats.drawn++;
