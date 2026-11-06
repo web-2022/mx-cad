@@ -1,8 +1,10 @@
+import {patchLargeDxfColors} from './dxf-color-stream.ts';
 import type {ColorEdit} from './entity-edits';
 import type {Shape} from './geometry';
 /** Patches the original DXF stream, preserving unknown records, OBJECTS and bytes.
  * Does not reconstruct a drawing from its render geometry. */
 export function patchDxf(bytes:Uint8Array,edits:Map<string,ColorEdit>,drawings:Shape[]=[],layers:{name:string;color:string;isVisible:boolean}[]=[]):Uint8Array{
+  if(bytes.byteLength>16*1024*1024&&!drawings.length&&!layers.length)return patchLargeDxfColors(bytes,edits);
   let text='';for(let i=0;i<bytes.length;i+=8192)text+=String.fromCharCode(...bytes.subarray(i,i+8192));
   if(text.startsWith('AutoCAD Binary DXF'))throw Error('Guardar DXF binario no está soportado; convierte a DXF ASCII.');
   const lines=text.replace(/\r\n?/g,'\n').split('\n'),records:{code:number;value:string}[]=[];

@@ -64,3 +64,9 @@ Los intervalos de `requestAnimationFrame` en SwiftShader estuvieron alrededor de
 Pruebas automatizadas: caras abiertas/cerradas/no manifold, transformaciones y coordenadas grandes, polyface/MESH, BVH, color y herencia; interfaz con todos los modos, transparencia, selección/color/deshacer, capas, ejes, coordenadas y regreso a Model/Layout. La suite existente verifica también textos, hatch, guardado DXF, referencias locales, IFC/GLB y PNG.
 
 Para repetir la comparación local: instala dependencias con `npm ci`, ejecuta `npm run build`, sirve `npm run preview -- --port 4173` y `npm run dev -- --port 5173` en terminales separadas. Ejecuta `MX_CAD_BENCH_FILE=/ruta/plano.dxf MX_CAD_BROWSER=/ruta/chromium node scripts/cad-gpu-benchmark.mjs`. El script rechaza URLs externas y deja métricas/captura en `test-results/`; esos archivos no forman parte de la publicación. La muestra de geometría original debe permanecer accesible localmente durante la prueba.
+
+### Guardado de color del archivo completo
+
+Al probar un cambio RGB en `stopes.dxf`, el escritor anterior consumió aproximadamente 3.228 MiB de RSS y 12,77 s en Node local, porque reconstruía listas de millones de tags. Se añadió una ruta por rangos de bytes para DXF grandes con cambios de color y sin trazos/capas nuevos: solo modifica el prefijo común de las entidades editadas y copia sin alteración los demás bytes, incluidos coordenadas, secciones desconocidas y finales CRLF.
+
+En la misma prueba, esta ruta tardó 0,95 s y utilizó aproximadamente 177 MiB de RSS. El resultado conservó los 193.088 3DFACE y 120.680 POINT, con el nuevo RGB en la entidad objetivo. Son mediciones de una ejecución local de Node 24, no una promesa de memoria/tiempo total del navegador. Con nuevos trazos o capas se mantiene el escritor general y sus costes/limitaciones anteriores.
