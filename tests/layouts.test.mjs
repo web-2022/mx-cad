@@ -13,7 +13,7 @@ test('DXF: separate sheets, paper sizes, viewport hatch islands, layers, local i
     assert.deepEqual(await page.locator('#layout-tabs button').allTextContents(),['Model','A3-Civil','A4-Detalle']);
     await page.getByRole('tab',{name:'A3-Civil',exact:true}).click();
     assert.match(await page.locator('#paper-info').textContent(),/420\.00 × 297\.00 mm/);
-    assert.equal(await page.locator('#viewer-paper').isVisible(),true);assert.equal(await page.locator('#view-3d').isDisabled(),true);
+    assert.equal(await page.locator('#viewer-paper').isVisible(),true);assert.equal(await page.locator('#nav-orbit').isDisabled(),true);
     // The centre of the first viewport is the hole of the model hatch.
     await expect.poll(()=>page.locator('#viewer-paper canvas').evaluate(canvas=>{
       const scale=Math.min(canvas.clientWidth/420,canvas.clientHeight/297)*.88,dpr=canvas.width/canvas.clientWidth;
@@ -37,8 +37,8 @@ test('DXF: separate sheets, paper sizes, viewport hatch islands, layers, local i
     await app.evaluate(({session},save)=>session.defaultSession.on('will-download',(_event,item)=>item.setSavePath(save)),path.resolve('test-results/layout.png'));
     await page.locator('#export').click();await expect.poll(async()=>{try{return(await readFile('test-results/layout.png')).length>8;}catch{return false;}}).toBe(true);
     const png=await readFile('test-results/layout.png');assert.deepEqual([...png.subarray(0,8)],[137,80,78,71,13,10,26,10]);
-    await page.getByRole('tab',{name:'Model',exact:true}).click();await page.locator('#view-3d').click();assert.equal(await page.locator('#viewer-3d').isVisible(),true);await page.locator('#view-2d').click();
-    await page.locator('#clear').click();assert.deepEqual(await page.locator('#layout-tabs button').allTextContents(),['Model']);assert.equal(await page.locator('#empty').isVisible(),true);assert.deepEqual(errors,[]);
+    await page.getByRole('tab',{name:'Model',exact:true}).click();await page.locator('#nav-orbit').click();assert.equal(await page.locator('#viewer-3d').isVisible(),true);await page.locator('#nav-top').click();
+    await page.locator('#clear').click();assert.deepEqual(await page.locator('#layout-tabs button').allTextContents(),['Model']);assert.equal(await page.locator('#empty').isVisible(),false);assert.deepEqual(errors,[]);
   }finally{await app.close();}
 });
 

@@ -143,6 +143,8 @@ export function normalizeCadEntity(raw: Record<string, unknown>, forcedType?: st
   entity.valign = numberOrUndefined(raw.valign ?? raw.verticalAlignment ?? nestedText?.valign) ?? entity.valign;
   entity.extrusionDirection = pointFromUnknown(raw.extrusionDirection ?? raw.extrusion ?? nestedText?.extrusionDirection) ?? entity.extrusionDirection;
   entity.rotation = numberOrUndefined(raw.rotation ?? raw.angle ?? nestedText?.rotation) ?? entity.rotation;
+  if(entity.type==='MTEXT'){const d=pointFromUnknown(raw.direction);if(d&&(d.x||d.y))entity.rotation=Math.atan2(d.y,d.x);}
+
   entity.text = stringOrUndefined(nestedText?.text ?? raw.text ?? raw.value ?? raw.string ?? raw.contents ?? raw.defaultValue ?? raw.default_value) ?? entity.text;
   entity.value = stringOrUndefined(raw.value ?? nestedText?.text ?? raw.text ?? raw.string ?? raw.contents ?? raw.defaultValue ?? raw.default_value) ?? entity.value;
   entity.name = stringOrUndefined(raw.name ?? raw.blockName) ?? entity.name;

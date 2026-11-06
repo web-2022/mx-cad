@@ -1,7 +1,7 @@
 import {planarPoint,insertedPoint} from './world-geometry.ts';
 import type { CadDocument, CadEntity, CadPoint3D } from './vendor/cad/index';
 export type Point = CadPoint3D;
-export interface Shape { id: string; type: string; layer: string; points: Point[]; nodes: Point[]; closed: boolean; origin: 'Plano' | 'Sesión'; approximate?: boolean }
+export interface Shape { id: string; type: string; layer: string; points: Point[]; nodes: Point[]; closed: boolean; origin: 'Plano' | 'Sesión'; approximate?: boolean; entity?: CadEntity; color?: string }
 export const distance = (a: Point, b: Point) => Math.hypot(b.x-a.x,b.y-a.y);
 export function closest(p: Point, a: Point, b: Point): Point {
   const dx=b.x-a.x,dy=b.y-a.y,den=dx*dx+dy*dy;
@@ -64,10 +64,11 @@ export function shapesFromDocument(doc: CadDocument,options:{world3D?:boolean}={
         for(let i=0;i<=steps;i++)points.push({x:e.center.x+e.radius*Math.cos(start+sweep*i/steps),y:e.center.y+e.radius*Math.sin(start+sweep*i/steps),z:e.center.z??0});
         nodes=closed?[e.center]:[points[0],points.at(-1)!,e.center];approximate=true;
       }
-      if(options.world3D&&['3DFACE','SOLID','TRACE'].includes(e.type)){const v=e.vertices??e.points??[];points=v.length===4&&e.type!=='3DFACE'?[v[0],v[1],v[3],v[2]]:v;nodes=points;closed=true;}
+      if(['TEXT','MTEXT','ATTRIB','ATTDEF','INSERT','DIMENSION'].includes(e.type)&&!points.length){const anchor=e.insertionPoint??e.startPoint;if(anchor){points=[anchor];nodes=points;}}
+      if(['3DFACE','SOLID','TRACE'].includes(e.type)){const v=e.vertices??e.points??[];points=v.length===4&&e.type!=='3DFACE'?[v[0],v[1],v[3],v[2]]:v;nodes=points;closed=true;}
       if(!points.length||points.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)))continue;
       if(!nodes.length)nodes=points;
-      out.push({id:`file-${out.length}`,type:e.type,layer,points:points.map(p=>transform(options.world3D?planarPoint(p,e):p)),nodes:nodes.map(p=>transform(options.world3D?planarPoint(p,e):p)),closed,origin:'Plano',approximate});
+      out.push({id:`file-${out.length}`,type:e.type,layer,points:points.map(p=>transform(options.world3D?planarPoint(p,e):p)),nodes:nodes.map(p=>transform(options.world3D?planarPoint(p,e):p)),closed,origin:'Plano',approximate,entity:e});
     }
   }
   walk(doc.entities,p=>({...p}));return out;

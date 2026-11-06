@@ -1,11 +1,11 @@
 import type { CadDocument, CadEntity, CadPoint3D } from './vendor/cad/index';
-import { separateDrawingSpaces, record } from './drawing-spaces';
+import { separateDrawingSpaces, record } from './drawing-spaces.ts';
 
 export interface DxfPair {code:number;value:string}
 export interface DxfRecord {type:string;section:string;pairs:DxfPair[]}
 export function scanDxf(text:string):DxfRecord[]{
   const lines=text.replace(/\r\n?/g,'\n').split('\n'),out:DxfRecord[]=[];let section='',current:DxfRecord|undefined;
-  for(let i=0;i+1<lines.length;i+=2){const code=Number(lines[i].trim()),value=lines[i+1].trim();if(!Number.isFinite(code))continue;
+  for(let i=0;i+1<lines.length;i+=2){const code=Number(lines[i].trim()),value=[1,3].includes(code)?lines[i+1]:lines[i+1].trim();if(!Number.isFinite(code))continue;
     if(code===0&&value==='SECTION'){section=lines[i+3]?.trim()??'';i+=2;current=undefined;continue;}
     if(code===0&&value==='ENDSEC'){section='';current=undefined;continue;}
     if(code===0){current={type:value,section,pairs:[]};out.push(current);}else current?.pairs.push({code,value});
@@ -58,12 +58,12 @@ export function supplementDxf(doc:CadDocument,text:string){
     e.layoutName=str(p,410);e.ownerBlockRecordHandle=str(p,330);e.isInPaperSpace=num(p,67)===1;
     e.lineweight=num(p,370,-1);e.lineType=str(p,6)??e.lineType;e.lineTypeScale=num(p,48,1);e.colorIndex=num(p,62,256);
     if(str(p,420)!==undefined)e.trueColor=num(p,420);
-    if(str(p,440)!==undefined&&(num(p,440)>>>24)===2)e.opacity=(num(p,440)&255)/255;
+    if(str(p,440)!==undefined&&(num(p,440)>>>24)===2)e.opacity=1-(num(p,440)&255)/255;
     e.textStyleName=str(p,7);
     if(r.type==='ATTRIB'||r.type==='ATTDEF'){e.attributeTag=str(p,2);e.attributeFlags=num(p,70);if(num(p,70)&1)e.isVisible=false;}
     if(r.type==='INSERT')insert=e;
     else if(r.type==='ATTRIB' && insert){insert.attribs??=[];if(!insert.attribs.some(a=>a.handle===e!.handle))insert.attribs.push(e);attached.add(e);}
-    if(['TEXT','MTEXT','ATTRIB','ATTDEF'].includes(r.type)){e.insertionPoint=pt(p,10);e.text=p.filter(x=>x.code===1||x.code===3).map(x=>x.value).join('').replace(/\\P/g,'\n');e.textHeight=num(p,40,1);e.rotation=radians(num(p,50));e.xScale=num(p,41,1);e.halign=num(p,72);e.valign=num(p,73);e.kind='text';}
+    if(['TEXT','MTEXT','ATTRIB','ATTDEF'].includes(r.type)){e.insertionPoint=pt(p,10);e.text=p.filter(x=>x.code===1||x.code===3).map(x=>x.value).join('').replace(/\\P/g,'\n');e.textHeight=num(p,40,1);e.rotation=radians(num(p,50));e.xScale=r.type==='MTEXT'?1:num(p,41,1);e.halign=r.type==='MTEXT'?0:num(p,72);e.valign=r.type==='MTEXT'?0:num(p,73);e.kind='text';if(r.type==='MTEXT'){e.rectWidth=num(p,41);e.attachmentPoint=num(p,71,1);e.lineSpacing=num(p,44,1);const d=pt(p,11);if(d.x||d.y)e.rotation=Math.atan2(d.y,d.x);}}
     if(r.type==='HATCH')Object.assign(e,hatchData(p),{kind:'hatch'});
     if(r.type==='DIMENSION'&&str(p,2)){e.kind='insert';e.blockName=str(p,2);e.insertionPoint={x:0,y:0};e.rotation=0;}
     if(r.type==='VIEWPORT')Object.assign(e,{viewportCenter:pt(p,10),width:num(p,40),height:num(p,41),status:num(p,68),viewportId:num(p,69),displayCenter:pt(p,12),targetPoint:pt(p,17),viewDirection:pt(p,16),viewHeight:num(p,45),viewTwistAngle:radians(num(p,51)),statusBitFlags:num(p,90),frozenLayerIds:p.filter(x=>x.code===331).map(x=>x.value),clippingBoundaryId:str(p,340),kind:'viewport'});

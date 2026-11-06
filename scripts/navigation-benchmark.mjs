@@ -20,12 +20,15 @@ try{
     const flush=()=>{const callbacks=[...queue.values()];queue.clear();for(const cb of callbacks)cb(performance.now());};
     canvas.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:1,button:0,buttons:1,clientX:r.x+r.width/2,clientY:r.y+r.height/2}));
     const pan=sample(i=>{canvas.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:1,button:0,buttons:1,clientX:r.x+r.width/2+i+1,clientY:r.y+r.height/2+i+1}));flush();});
-    canvas.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:1,button:0}));flush();window.requestAnimationFrame=originalRAF;window.cancelAnimationFrame=originalCancel;canvas.setPointerCapture=originalCapture;
+    canvas.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:1,button:0}));flush();
+    const cursor=sample(i=>{canvas.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:2,buttons:0,clientX:r.x+r.width*.4+i,clientY:r.y+r.height*.4}));flush();});
+    const selection=sample(i=>{const init={bubbles:true,pointerId:3,button:0,clientX:r.x+r.width*.5+i,clientY:r.y+r.height*.5};canvas.dispatchEvent(new PointerEvent('pointerdown',init));canvas.dispatchEvent(new PointerEvent('pointerup',init));});
+    window.requestAnimationFrame=originalRAF;window.cancelAnimationFrame=originalCancel;canvas.setPointerCapture=originalCapture;
     const layouts=sample(i=>api.sheet(i%2));
     const paperZoom=sample(i=>api.zoom(i%2?1/1.14:1.14));
-    return{zoom,pan,layouts,paperZoom};
+    return{zoom,pan,layouts,paperZoom,cursor,selection};
   });
-  const {zoom,pan,layouts,paperZoom}=metrics;
+  const {zoom,pan,layouts,paperZoom,cursor,selection}=metrics;
   start=performance.now();await page.locator('#file-input').setInputFiles('tests/fixtures/HatchG.dwg');await page.locator('#busy').waitFor({state:'hidden'});await expect(page.locator('#filename')).toHaveText('HatchG.dwg');const openDwgMs=+(performance.now()-start).toFixed(2);
-  console.log('MX_BENCHMARK '+JSON.stringify({cpu:os.cpus()[0].model,cpus:os.cpus().length,platform:os.platform(),node:process.version,viewport:'1400x900',dxfBytes:Buffer.byteLength(text),generatedLines:10000,entityCount,dwgBytes:(await readFile('tests/fixtures/HatchG.dwg')).length,openDxfMs,openDwgMs,measurement:'CPU ms, deterministic interaction frame flush; not display FPS',modelZoom:summary(zoom),pointerPan:summary(pan),layoutSwitch:summary(layouts),paperZoom:summary(paperZoom)}));
+  console.log('MX_BENCHMARK '+JSON.stringify({cpu:os.cpus()[0].model,cpus:os.cpus().length,platform:os.platform(),node:process.version,viewport:'1400x900',dxfBytes:Buffer.byteLength(text),generatedLines:10000,entityCount,dwgBytes:(await readFile('tests/fixtures/HatchG.dwg')).length,openDxfMs,openDwgMs,measurement:'CPU ms, deterministic interaction frame flush; not display FPS',cursor:summary(cursor),selection:summary(selection),modelZoom:summary(zoom),pointerPan:summary(pan),layoutSwitch:summary(layouts),paperZoom:summary(paperZoom)}));
 }finally{await app.close();}

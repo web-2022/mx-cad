@@ -7,7 +7,7 @@ const config='.fixtures/local-dwgs.json';
 test('DWG privados: encuadre y geometría visible', {skip:!existsSync(config),timeout:300000},async()=>{
   const app=await electron.launch({args:['.'],env:{...process.env,MX_CAD_TEST:'1'}});
   try{
-    const page=await app.firstWindow();await page.locator('#open-empty').waitFor();
+    const page=await app.firstWindow();await page.locator('#open').waitFor();
     await mkdir('test-results/diagnostic',{recursive:true});
     for(const [i,file]of JSON.parse(await readFile(config,'utf8')).entries()){
       await page.locator('#file-input').setInputFiles(file);

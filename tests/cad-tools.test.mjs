@@ -14,7 +14,7 @@ test('seleccionar, medir con snap, dibujar y exportar trazos', {timeout:90000},a
     // Controlled CAD fixture with known dimensions: line (0,0)-(100,0), point (0,50).
     const groups=[0,'SECTION',2,'HEADER',9,'$INSUNITS',70,6,0,'ENDSEC',0,'SECTION',2,'ENTITIES',0,'LINE',8,'0',10,0,20,0,30,10,11,100,21,0,31,10,0,'POINT',8,'0',10,0,20,50,30,35,0,'ENDSEC',0,'EOF'];
     await page.locator('#file-input').setInputFiles({name:'medidas.dxf',mimeType:'application/dxf',buffer:Buffer.from(groups.join('\n')+'\n')});
-    await page.locator('#empty').waitFor({state:'hidden'});
+    await page.locator('#busy').waitFor({state:'hidden'});
     const v=await page.locator('#viewport').boundingBox();
     // Find the horizontal source segment and validate its authored dimensions.
     let picked=false;
@@ -64,8 +64,8 @@ test('seleccionar, medir con snap, dibujar y exportar trazos', {timeout:90000},a
     const dxf=await readFile(output,'utf8');assert.match(dxf,/POLYLINE/);assert.match(dxf,/VERTEX/);
     const {DxfLoader}=await import('@flyfish-dev/cad-viewer');
     const parsed=await new DxfLoader().load({buffer:Buffer.from(dxf),fileName:'trazos.dxf'});
-    assert.equal(parsed.document.entities.length,5);
-    assert.equal(parsed.document.entities.filter(e=>e.layer==='Pruebas').length,4);
+    assert.equal(parsed.document.entities.length,3);
+    assert.equal(parsed.document.entities.filter(e=>e.layer==='Pruebas').length,3);
     const polygon=parsed.document.entities.find(e=>e.type==='POLYLINE');
     assert.ok(polygon?.isClosed);assert.equal(polygon.vertices.length,4);
     await page.locator('.cad-dock').evaluate(n=>n.scrollTop=0);

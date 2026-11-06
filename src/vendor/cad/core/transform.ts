@@ -113,6 +113,7 @@ export function transformEntity(entity: CadEntity, matrix: Matrix2D): CadEntity 
   if (typeof entity.thickness === 'number' && Number.isFinite(scaleApprox)) clone.thickness = entity.thickness * scaleApprox;
   if (typeof entity.lineTypeScale === 'number' && Number.isFinite(scaleApprox)) clone.lineTypeScale = entity.lineTypeScale * scaleApprox;
   if (entity.kind === 'text' || /^(TEXT|MTEXT|ATTRIB|ATTDEF|DIMENSION)$/i.test(String(entity.type ?? ''))) {
+    if(entity.type==='MTEXT'&&typeof entity.rectWidth==='number')clone.rectWidth=entity.rectWidth*scaleX;
     if (typeof entity.textHeight === 'number' && Number.isFinite(scaleY)) clone.textHeight = entity.textHeight * scaleY;
     if (typeof entity.height === 'number' && Number.isFinite(scaleY)) clone.height = entity.height * scaleY;
     if (typeof entity.xScale === 'number' && scaleY > 1e-14 && Number.isFinite(scaleX)) clone.xScale = entity.xScale * scaleX / scaleY;

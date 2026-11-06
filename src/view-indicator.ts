@@ -1,0 +1,3 @@
+export type Axes={x:{x:number;y:number};y:{x:number;y:number};z:{x:number;y:number}};
+export function drawAxes(svg:SVGSVGElement,axes:Axes){svg.replaceChildren();const ns='http://www.w3.org/2000/svg';for(const [name,color]of [['x','#ef7373'],['y','#69dba0'],['z','#76adff']]){const q=axes[name as keyof Axes],x=48+q.x*29,y=52-q.y*29,line=document.createElementNS(ns,'line'),text=document.createElementNS(ns,'text');for(const [k,v]of Object.entries({x1:48,y1:52,x2:x,y2:y,stroke:color,'stroke-width':2}))line.setAttribute(k,String(v));text.setAttribute('x',String(x+4));text.setAttribute('y',String(y-4));text.setAttribute('fill',color);text.textContent=name.toUpperCase();svg.append(line,text);}}
+export const topAxes:Axes={x:{x:1,y:0},y:{x:0,y:1},z:{x:0,y:0}};
