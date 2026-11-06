@@ -1,3 +1,4 @@
+import {missingNativeMeshes,recoverDwgMeshes} from '../../../../dwg-mesh-recovery';
 import { completeDwgDocument } from '../../../../dwg-spaces';
 import { addBlock, addLayer, addLineType, createCadDocument, normalizeCadDataValue, normalizeCadEntity, numberOrUndefined, pointFromUnknown, stringOrUndefined } from '../../core/entity.js';
 import { exactArrayBuffer } from '../../core/format.js';
@@ -43,6 +44,7 @@ export async function parseDwgBytes(bytes: Uint8Array, options: ParseDwgBytesOpt
   if (typeof dwg.error === 'number' && dwg.error !== 0) throw new Error(`LibreDWG parse error code: ${dwg.error}.`);
 
   options.onProgress?.({ phase: 'normalize', format: 'dwg', message: 'Normalizing DWG database…', total: bytes.byteLength, percent: 72 });
+  const missingMeshes=missingNativeMeshes(lib.instance,dwg,lib.module.Dwg_Object_Type);let recoveredMeshBytes:Uint8Array|undefined;if(missingMeshes.length&&typeof lib.instance.dwg_write_dxf==='function'){try{const out=lib.instance.dwg_write_dxf(fileContent);if(out)recoveredMeshBytes=new Uint8Array(out);}catch{/* Recovery reports a warning below. */}}
   const rawDb = typeof lib.instance.convert === 'function' ? lib.instance.convert(dwg) : dwg;
   enrichLayoutPlotSettings(rawDb, lib.instance, dwg, lib.module.Dwg_Object_Type);
   enrichDwgBusinessObjects(rawDb, extractDwgBusinessObjects(lib.instance, dwg, lib.module.Dwg_Object_Type));
@@ -53,6 +55,7 @@ export async function parseDwgBytes(bytes: Uint8Array, options: ParseDwgBytesOpt
   }
 
   const document = normalizeDwgDatabase(rawDb, sourceName, version, { keepRaw: Boolean(options.keepRaw) });
+  await recoverDwgMeshes(document,recoveredMeshBytes,missingMeshes);
   const elapsedMs = performance.now() - started;
   options.onProgress?.({ phase: 'done', format: 'dwg', message: 'DWG loaded.', total: bytes.byteLength, percent: 100, elapsedMs });
   return {

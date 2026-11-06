@@ -5,7 +5,7 @@ import path from 'node:path';
 import { mkdir, access, unlink, readFile } from 'node:fs/promises';
 
 test('DXF local: abrir, capas, zoom, PNG y archivo inválido', { timeout: 90000 }, async () => {
-  const app = await electron.launch({ args: ['.'], env: { ...process.env, MX_CAD_TEST: '1' } });
+  const app = await electron.launch({ args: ['.','--enable-unsafe-swiftshader'], env: { ...process.env, MX_CAD_TEST: '1' } });
   try {
     const page = await app.firstWindow();
     page.setDefaultTimeout(15000);

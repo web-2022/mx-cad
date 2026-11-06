@@ -1,16 +1,21 @@
+import {supplementMeshes} from './mesh-supplement.ts';
 import type { CadDocument, CadEntity, CadPoint3D } from './vendor/cad/index';
 import { separateDrawingSpaces, record } from './drawing-spaces.ts';
 
 export interface DxfPair {code:number;value:string}
 export interface DxfRecord {type:string;section:string;pairs:DxfPair[]}
-export function scanDxf(text:string):DxfRecord[]{
-  const lines=text.replace(/\r\n?/g,'\n').split('\n'),out:DxfRecord[]=[];let section='',current:DxfRecord|undefined;
-  for(let i=0;i+1<lines.length;i+=2){const code=Number(lines[i].trim()),value=[1,3].includes(code)?lines[i+1]:lines[i+1].trim();if(!Number.isFinite(code))continue;
-    if(code===0&&value==='SECTION'){section=lines[i+3]?.trim()??'';i+=2;current=undefined;continue;}
+export function scanDxf(text:string,compact=false):DxfRecord[]{
+  const out:DxfRecord[]=[];let section='',current:DxfRecord|undefined,at=0,pendingSection=false;
+  const next=()=>{if(at>=text.length)return undefined;const end=text.indexOf('\n',at),line=text.slice(at,end<0?text.length:end).replace(/\r$/,'');at=end<0?text.length:end+1;return line;};
+  const common=new Set([5,8,330,410,67,370,6,48,62,420,440,7,70]);
+  while(at<text.length){const raw=next(),rawValue=next();if(raw===undefined||rawValue===undefined)break;const code=Number(raw.trim()),value=[1,3].includes(code)?rawValue:rawValue.trim();if(!Number.isFinite(code))continue;
+    if(pendingSection&&code===2){section=value;pendingSection=false;continue;}
+    if(code===0&&value==='SECTION'){pendingSection=true;current=undefined;continue;}
     if(code===0&&value==='ENDSEC'){section='';current=undefined;continue;}
-    if(code===0){current={type:value,section,pairs:[]};out.push(current);}else current?.pairs.push({code,value});
+    if(code===0){current={type:value,section,pairs:[]};out.push(current);}else if(current&&(!compact||!['3DFACE','POINT','LINE','CIRCLE','ARC'].includes(current.type)||common.has(code)))current.pairs.push({code,value});
   }return out;
 }
+
 const str=(p:DxfPair[],code:number)=>p.find(x=>x.code===code)?.value;
 const num=(p:DxfPair[],code:number,fallback=0)=>{const v=str(p,code);return v!==undefined&&Number.isFinite(Number(v))?Number(v):fallback;};
 const pt=(p:DxfPair[],code:number):CadPoint3D=>({x:num(p,code),y:num(p,code+10),z:num(p,code+20)});
@@ -42,14 +47,14 @@ function hatchData(p:DxfPair[]){
 
 // Supplement fields skipped by dxf-parser, including the OBJECTS section.
 export function supplementDxf(doc:CadDocument,text:string){
-  const records=scanDxf(text),all=[...doc.entities,...Object.values(doc.blocks).flatMap(b=>b.entities)],byHandle=new Map(all.filter(e=>e.handle).map(e=>[e.handle!.toUpperCase(),e]));
+  const records=scanDxf(text,true),all=[...doc.entities,...Object.values(doc.blocks).flatMap(b=>b.entities)],byHandle=new Map(all.filter(e=>e.handle).map(e=>[e.handle!.toUpperCase(),e]));
   let blockName='';const blockRecords:any[]=[];let insert:CadEntity|undefined;const attached=new Set<CadEntity>();
   for(const r of records){
     const p=r.pairs;if(r.type!=='ATTRIB' && r.type!=='INSERT')insert=undefined;if(r.type==='BLOCK_RECORD')blockRecords.push({name:str(p,2),handle:str(p,5),layoutHandle:str(p,340)});
     if(r.section==='BLOCKS'&&r.type==='BLOCK'){blockName=str(p,2)??'';continue;}if(r.type==='ENDBLK'){blockName='';continue;}
     if(!['ENTITIES','BLOCKS'].includes(r.section)||['SEQEND','VERTEX'].includes(r.type))continue;
     const h=str(p,5)?.toUpperCase();let e=h?byHandle.get(h):undefined;
-    if(!e&&['HATCH','VIEWPORT','IMAGE','ATTRIB','ATTDEF','DIMENSION'].includes(r.type)){
+    if(!e&&['HATCH','VIEWPORT','IMAGE','ATTRIB','ATTDEF','DIMENSION','3DSOLID','BODY','REGION','SURFACE','ACAD_PROXY_ENTITY','PROXY_ENTITY'].includes(r.type)){
       e={type:r.type,handle:h,layer:str(p,8)??'0',isVisible:true};
       if(r.section==='BLOCKS'){if(!doc.blocks[blockName])continue;doc.blocks[blockName].entities.push(e);}else doc.entities.push(e);
       if(h)byHandle.set(h,e);
@@ -77,6 +82,7 @@ export function supplementDxf(doc:CadDocument,text:string){
   doc.entities=doc.entities.filter(e=>!attached.has(e));
   for(const block of Object.values(doc.blocks))block.entities=block.entities.filter(e=>!attached.has(e));
   // Some DXFs identify owners only through BLOCK_RECORD; other files use 410.
+  supplementMeshes(doc,records);
   separateDrawingSpaces(doc,layouts,blockRecords);
   return doc;
 }
