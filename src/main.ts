@@ -34,6 +34,7 @@ let controller: AbortController | undefined;
 let documentModel: CadDocument | undefined;
 let currentName = '';
 let originalFile:File|undefined;
+const coordinateFormatter=new Intl.NumberFormat('es-PE',{minimumFractionDigits:3,maximumFractionDigits:3});
 let activePointer=0;let cursorFrame=0;let cursorEvent:PointerEvent|undefined;
 let workElevation:number|undefined;
 let tools: CadTools | undefined;
@@ -353,7 +354,7 @@ viewport.addEventListener('dragover', e => { e.preventDefault(); viewport.classL
 viewport.addEventListener('dragleave', e => { if (!viewport.contains(e.relatedTarget as Node)) viewport.classList.remove('dragging'); });
 viewport.addEventListener('drop', e => { e.preventDefault(); viewport.classList.remove('dragging'); const files=Array.from(e.dataTransfer?.files??[]);if(files.length)openFiles(files); });
 window.addEventListener('keydown', e => {
-  if(e.key==='Escape'){const canvas=navigationAdapter().canvas;canvas.dispatchEvent(new PointerEvent('pointercancel',{pointerId:activePointer,bubbles:true}));if(canvas.hasPointerCapture(activePointer))canvas.releasePointerCapture(activePointer);if(el('viewport').hasPointerCapture(activePointer))el('viewport').releasePointerCapture(activePointer);tools?.escape();bim?.escape();const n=el('notice');if(!n.classList.contains('error'))n.hidden=true;}
+  if(e.key==='Escape'){const canvas=navigationAdapter().canvas;canvas.dispatchEvent(new PointerEvent('pointercancel',{pointerId:activePointer,bubbles:true}));if(canvas.hasPointerCapture(activePointer))canvas.releasePointerCapture(activePointer);if(el('viewport').hasPointerCapture(activePointer))el('viewport').releasePointerCapture(activePointer);tools?.escape();view3D?.escape();paperView?.escape();bim?.escape();const n=el('notice');if(!n.classList.contains('error'))n.hidden=true;}
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); selectFile(); }
   else if (!(e.target instanceof HTMLInputElement) && (active||!!bim) && !controller && e.key.toLowerCase() === 'f') navigation?.change(()=>fitDrawing());
 });
@@ -368,7 +369,7 @@ function navigationAdapter():NavigationAdapter {
   const context=bim?'bim':selectedSheet?'paper':is3D?'wire':'model';
   const enabled=!!(active||bim)&&!controller;
   if(bim)return {key:fileRevision+':bim',revision:fileRevision,context,enabled,canvas:bim.canvas,state:()=>bim!.getState(),restore:s=>bim!.setState(s),zoom:f=>bim!.zoom(f),fit:()=>bim!.fit(),window:b=>bim!.zoomWindow(b),setMode:m=>bim!.setInteractionMode(m),preset:v=>bim!.preset(v)};
-  if(selectedSheet&&paperView)return {key:fileRevision+':paper:'+selectedSheet.id,revision:fileRevision,context,enabled,canvas:paperView.canvas,state:()=>paperView!.getState(),restore:s=>paperView!.setState(s),zoom:f=>paperView!.zoom(f),fit:()=>paperView!.fit(),window:b=>paperView!.zoomWindow(b),setMode:()=>{}};
+  if(selectedSheet&&paperView)return {key:fileRevision+':paper:'+selectedSheet.id,revision:fileRevision,context,enabled,canvas:paperView.canvas,state:()=>paperView!.getState(),restore:s=>paperView!.setState(s),zoom:f=>paperView!.zoom(f),fit:()=>paperView!.fit(),window:b=>paperView!.zoomWindow(b),setMode:m=>paperView!.setInteractionMode(m)};
   if(is3D&&view3D)return {key:fileRevision+':wire',revision:fileRevision,context,enabled,canvas:view3D.canvas,state:()=>view3D!.getState(),restore:s=>view3D!.setState(s),zoom:f=>view3D!.zoom(f),fit:()=>view3D!.fit(),window:b=>view3D!.zoomWindow(b),setMode:m=>view3D!.setInteractionMode(m),preset:v=>{if(v==='top')setView3D(false);else view3D!.preset(v);}};
   return {key:fileRevision+':model',revision:fileRevision,context:'model',enabled,canvas:viewer.canvas,state:()=>viewer.renderer.getViewState(),restore:s=>viewer.renderer.setViewState(s),zoom:f=>viewer.renderer.zoom(f),fit:()=>fitDrawing(),window:b=>{const state=viewer.renderer.getViewState(),center=viewer.renderer.screenToWorld({x:b.x+b.width/2,y:b.y+b.height/2});viewer.renderer.setViewState({centerX:center.x,centerY:center.y,scale:state.scale*Math.min(viewer.canvas.clientWidth/b.width,viewer.canvas.clientHeight/b.height)});},mode:()=>tools?.getNavigationMode()??'select',setMode:m=>{if(m==='orbit'){setView3D(true);return;}tools?.setNavigationMode(m==='pan'?'pan':'select');},preset:v=>{if(v==='top')fitDrawing();else{setView3D(true);view3D?.preset(v);}}};
 }
@@ -400,11 +401,12 @@ el('save-confirm').onclick=async()=>{
 };
 el('maximize').onclick=()=>{const shell=document.querySelector('.shell')!,max=shell.classList.toggle('workspace-maximized');el('maximize').setAttribute('aria-pressed',String(max));requestAnimationFrame(()=>{viewer.resize();if(selectedSheet)paperView?.fit();});};
 viewport.addEventListener('mx:axes',e=>drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),(e as CustomEvent).detail));
-viewport.addEventListener('mx:entityedit',()=>{if(selectedSheet&&documentModel)paperView?.setSheet(documentModel,selectedSheet,false);});
+viewport.addEventListener('mx:selectshape',e=>tools?.selectExternal((e as CustomEvent).detail));
+viewport.addEventListener('mx:entityedit',()=>{if(selectedSheet&&documentModel)paperView?.setSheet(documentModel,selectedSheet,false);if(is3D&&documentModel)view3D?.setShapes(shapesFromDocument(documentModel,{world3D:true}),false);});
 drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),topAxes);
 viewport.addEventListener('pointermove',e=>{cursorEvent=e;if(cursorFrame)return;cursorFrame=requestAnimationFrame(()=>{cursorFrame=0;const e=cursorEvent!;let label='Coordenadas del dibujo',p:{x:number;y:number;z?:number}|undefined;
  if(bim){label='Modelo BIM · coordenadas del archivo';p=bim.cursorPoint(e.clientX,e.clientY);}else if(selectedSheet&&paperView){label='Papel ('+selectedSheet.units+') · X / Y';const r=paperView.canvas.getBoundingClientRect();p=paperView.paperPoint(e.clientX-r.left,e.clientY-r.top);}else if(is3D&&view3D){if(!e.buttons)p=view3D.cursorPoint(e.clientX,e.clientY);}else if(active){const r=viewer.canvas.getBoundingClientRect();p={...drawingPoint(viewer.renderer.screenToWorld({x:e.clientX-r.left,y:e.clientY-r.top}),documentModel),z:workElevation};}
- const f=(n:number|undefined)=>n===undefined?'—':n.toLocaleString('es-PE',{minimumFractionDigits:3,maximumFractionDigits:3});el('cursor-coordinates').textContent=selectedSheet?`${label}: ${f(p?.x)} / ${f(p?.y)} · Elevación: —`:`${label} · Norte: ${f(p?.y)} | Este: ${f(p?.x)} | Elevación: ${f(p?.z)} · ${el('prop-units').textContent}`;
+ const f=(n:number|undefined)=>n===undefined?'—':coordinateFormatter.format(n);el('cursor-coordinates').textContent=selectedSheet?`${label}: ${f(p?.x)} / ${f(p?.y)} · Elevación: —`:`${label} · Norte: ${f(p?.y)} | Este: ${f(p?.x)} | Elevación: ${f(p?.z)} · ${el('prop-units').textContent}`;
  });});
 viewport.addEventListener('pointerleave',()=>{if(cursorFrame)cancelAnimationFrame(cursorFrame);cursorFrame=0;el('cursor-coordinates').textContent='Coordenadas del dibujo · Norte: — | Este: — | Elevación: —';});
 
