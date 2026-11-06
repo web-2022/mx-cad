@@ -7,7 +7,7 @@ import type {BimViewer} from './bim-viewer';
 import { PaperView } from './paper-view';
 import { sheetsOf, type DrawingSheet } from './drawing-spaces';
 import { fidelityWarnings, prepareReferences, loadLocalReference } from './references';
-import { CadViewer, type CadDocument } from './vendor/cad/index';
+import { CadViewer, resolveCadColor, type CadDocument } from './vendor/cad/index';
 import '@flyfish-dev/cad-viewer/style.css';
 import './style.css';
 import { View3D } from './view-3d';
@@ -82,6 +82,7 @@ const viewer = new CadViewer({
   onViewChange(event) { if(bim||selectedSheet||is3D)return; const zoom = Math.round(zoomReferenceScale ? event.view.scale / zoomReferenceScale * 100 : event.zoomPercent); el('coordinates').textContent = `ZOOM ${zoom}%  •  LOCAL`; el('zoom-label').textContent = `${zoom}%`; tools?.redraw(); }
 });
 
+function worldShapes(doc:CadDocument){return shapesFromDocument(doc,{world3D:true}).map(s=>({...s,color:s.entity?resolveCadColor({...s.entity,layer:s.layer},doc):undefined}));}
 function updateWireInfo(shapes:ReturnType<typeof shapesFromDocument>){const z=heightSummary(shapes),fmt=(n:number)=>n.toLocaleString('es-PE',{maximumFractionDigits:3});el('wire-info').textContent=z?`Alturas Z: ${fmt(z.min)} a ${fmt(z.max)} · ${z.atZero} trazos en Z=0 · unidades del archivo`:'Sin geometría 3D compatible';}
 function setView3D(enabled: boolean) {
   if(enabled && !documentModel)return;
@@ -102,7 +103,7 @@ function setView3D(enabled: boolean) {
   if(dock){dock.hidden=false;dock.inert=!!controller;}
   el('drawing-region').hidden=enabled||regions.length<2;
   if(enabled){
-    const shapes=shapesFromDocument(documentModel!,{world3D:true});const count=view3D!.setShapes(shapes);updateWireInfo(shapes);
+    const shapes=worldShapes(documentModel!);const count=view3D!.setShapes(shapes);updateWireInfo(shapes);
     notice(count?'Vista 3D de líneas y polilíneas. Los objetos no compatibles y los sólidos pueden no aparecer. Un plano sin cotas Z permanece plano.':'Este archivo no contiene líneas o polilíneas compatibles con la vista 3D.',!count);
   }else {viewer.resize();const m=documentModel?.savedView?.sceneTransform;drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),m&&documentModel?.savedView?.sceneTransformApplied!==false?{x:{x:m.a,y:m.b},y:{x:m.c,y:m.d},z:{x:0,y:0}}:topAxes);}
   navigation?.refresh();
@@ -211,7 +212,7 @@ function renderLayers() {
         viewer.renderer.setViewState(state);
       }
       if(selectedSheet && documentModel)paperView?.setSheet(documentModel,selectedSheet,false);
-      if(is3D && documentModel){const shapes=shapesFromDocument(documentModel,{world3D:true});view3D?.setShapes(shapes,false);updateWireInfo(shapes);}
+      if(is3D && documentModel){const shapes=worldShapes(documentModel);view3D?.setShapes(shapes,false);updateWireInfo(shapes);}
       tools?.refresh();
     };
     if (layer.name === activeLayer) row.classList.add('active-layer');
@@ -261,7 +262,7 @@ async function open(file: File,companions:File[]=[]) {
     setView3D(false);
     tools?.reset();
     prepareRegions();
-    const heights=heightSummary(shapesFromDocument(documentModel!,{world3D:true}));workElevation=heights&&Math.abs(heights.max-heights.min)<1e-7?heights.min:undefined;
+    const heights=heightSummary(worldShapes(documentModel!));workElevation=heights&&Math.abs(heights.max-heights.min)<1e-7?heights.min:undefined;
     el('empty').hidden = true;
     el('filename').textContent = file.name; el('tab').textContent = file.name;
     el('filemeta').textContent = `${result.format.toUpperCase()} · ${(file.size / 1024).toLocaleString('es-PE', { maximumFractionDigits: 1 })} KB`;
@@ -402,10 +403,10 @@ el('save-confirm').onclick=async()=>{
 el('maximize').onclick=()=>{const shell=document.querySelector('.shell')!,max=shell.classList.toggle('workspace-maximized');el('maximize').setAttribute('aria-pressed',String(max));requestAnimationFrame(()=>{viewer.resize();if(selectedSheet)paperView?.fit();});};
 viewport.addEventListener('mx:axes',e=>drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),(e as CustomEvent).detail));
 viewport.addEventListener('mx:selectshape',e=>tools?.selectExternal((e as CustomEvent).detail));
-viewport.addEventListener('mx:entityedit',()=>{if(selectedSheet&&documentModel)paperView?.setSheet(documentModel,selectedSheet,false);if(is3D&&documentModel)view3D?.setShapes(shapesFromDocument(documentModel,{world3D:true}),false);});
+viewport.addEventListener('mx:entityedit',()=>{if(selectedSheet&&documentModel)paperView?.setSheet(documentModel,selectedSheet,false);if(is3D&&documentModel)view3D?.setShapes(worldShapes(documentModel),false);});
 drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),topAxes);
 viewport.addEventListener('pointermove',e=>{cursorEvent=e;if(cursorFrame)return;cursorFrame=requestAnimationFrame(()=>{cursorFrame=0;const e=cursorEvent!;let label='Coordenadas del dibujo',p:{x:number;y:number;z?:number}|undefined;
- if(bim){label='Modelo BIM · coordenadas del archivo';p=bim.cursorPoint(e.clientX,e.clientY);}else if(selectedSheet&&paperView){label='Papel ('+selectedSheet.units+') · X / Y';const r=paperView.canvas.getBoundingClientRect();p=paperView.paperPoint(e.clientX-r.left,e.clientY-r.top);}else if(is3D&&view3D){if(!e.buttons)p=view3D.cursorPoint(e.clientX,e.clientY);}else if(active){const r=viewer.canvas.getBoundingClientRect();p={...drawingPoint(viewer.renderer.screenToWorld({x:e.clientX-r.left,y:e.clientY-r.top}),documentModel),z:workElevation};}
+ if(bim){label='Modelo BIM · coordenadas del archivo';p=bim.cursorPoint(e.clientX,e.clientY);}else if(selectedSheet&&paperView){label='Papel ('+selectedSheet.units+') · X / Y';const r=paperView.canvas.getBoundingClientRect();p=paperView.paperPoint(e.clientX-r.left,e.clientY-r.top);}else if(is3D&&view3D){label='Segmento cercano · coordenadas del dibujo';if(!e.buttons)p=view3D.cursorPoint(e.clientX,e.clientY);}else if(active){const r=viewer.canvas.getBoundingClientRect();p={...drawingPoint(viewer.renderer.screenToWorld({x:e.clientX-r.left,y:e.clientY-r.top}),documentModel),z:workElevation};}
  const f=(n:number|undefined)=>n===undefined?'—':coordinateFormatter.format(n);el('cursor-coordinates').textContent=selectedSheet?`${label}: ${f(p?.x)} / ${f(p?.y)} · Elevación: —`:`${label} · Norte: ${f(p?.y)} | Este: ${f(p?.x)} | Elevación: ${f(p?.z)} · ${el('prop-units').textContent}`;
  });});
 viewport.addEventListener('pointerleave',()=>{if(cursorFrame)cancelAnimationFrame(cursorFrame);cursorFrame=0;el('cursor-coordinates').textContent='Coordenadas del dibujo · Norte: — | Este: — | Elevación: —';});

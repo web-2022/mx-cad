@@ -27,3 +27,20 @@ DWG se convierte a DXF con `dwg_write_dxf` en worker local, usando el original y
 ## Validación pendiente del archivo del usuario
 
 La captura no permite comprobar fuentes, formato de hoja ni viewports almacenados. Se requiere DWG y PDF/referencia de AutoCAD para validar ese caso. No se declara corregida su fidelidad exacta.
+
+## Medición de esta revisión
+
+Comparación del commit anterior `fe04362` con esta revisión, ejecución [42137710484](https://github.com/web-2022/mx-cad/actions/runs/42137710484): mismo runner Windows, AMD EPYC 7763, 4 CPU lógicas, Node 24.22.2, ventana 1400 × 900. DXF de 539939 bytes con 10006 entidades (10000 líneas añadidas) y HatchG.dwg de 59489 bytes. 20 muestras por interacción. Milisegundos de trabajo CPU con callbacks de frame entregados de forma determinista, sin equivalencia con FPS.
+
+| Medición | Antes ms | Después ms |
+|---|---:|---:|
+| Apertura DXF, tiempo de pared | 1142.46 | 450.26 |
+| Apertura DWG, tiempo de pared | 425.10 | 431.67 |
+| Zoom Model | 1.75 | 1.90 |
+| Pan | 1.67 | 2.72 |
+| Cambio de Layout | 8.51 | 8.66 |
+| Zoom Layout | 5.05 | 5.29 |
+| Cursor | 0.01 | 1.44 |
+| Selección | 1.84 | 3.01 |
+
+Las coordenadas y las propiedades añaden trabajo: no se presenta esta revisión como una aceleración general. Apertura incluye condiciones de caché del runner y varía entre ejecuciones. Se conservan las cachés de render y agrupación de eventos existentes; el nuevo cursor alámbrico indexa proyecciones por encuadre y no reconstruye geometría original. Falta medir el DWG de producción del usuario. Las últimas correcciones de selección/estilo se validan con la suite de interfaz; estos números corresponden al SHA y ejecución enlazados.
