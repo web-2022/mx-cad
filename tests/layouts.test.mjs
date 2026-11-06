@@ -5,7 +5,7 @@ import {mkdir,readFile} from 'node:fs/promises';
 import path from 'node:path';
 
 test('DXF: separate sheets, paper sizes, viewport hatch islands, layers, local image, PNG and Model 3D',{timeout:120000},async()=>{
-  const app=await electron.launch({args:['.'],env:{...process.env,MX_CAD_TEST:'1'}});
+  const app=await electron.launch({args:['.','--enable-unsafe-swiftshader'],env:{...process.env,MX_CAD_TEST:'1'}});
   try{
     const page=await app.firstWindow(),errors=[];page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));
     await page.locator('#file-input').setInputFiles('tests/fixtures/layouts.dxf');await page.locator('#busy').waitFor({state:'hidden'});
@@ -43,7 +43,7 @@ test('DXF: separate sheets, paper sizes, viewport hatch islands, layers, local i
 });
 
 test('public LibreDWG DWG fixture exposes its paper presentations through the worker',{timeout:150000},async()=>{
-  const app=await electron.launch({args:['.'],env:{...process.env,MX_CAD_TEST:'1'}});
+  const app=await electron.launch({args:['.','--enable-unsafe-swiftshader'],env:{...process.env,MX_CAD_TEST:'1'}});
   try{
     const page=await app.firstWindow();await page.locator('#file-input').setInputFiles('tests/fixtures/HatchG.dwg');await page.locator('#busy').waitFor({state:'hidden',timeout:120000});
     assert.equal(await page.locator('#filename').textContent(),'HatchG.dwg');

@@ -1,7 +1,7 @@
 import {planarPoint,insertedPoint} from './world-geometry.ts';
 import type { CadDocument, CadEntity, CadPoint3D } from './vendor/cad/index';
 export type Point = CadPoint3D;
-export interface Shape { id: string; type: string; layer: string; points: Point[]; nodes: Point[]; closed: boolean; origin: 'Plano' | 'Sesión'; approximate?: boolean; entity?: CadEntity; color?: string }
+export interface Shape { id: string; type: string; layer: string; points: Point[]; nodes: Point[]; closed: boolean; origin: 'Plano' | 'Sesión'; approximate?: boolean; entity?: CadEntity; parentStyle?:CadEntity; color?: string }
 export const distance = (a: Point, b: Point) => Math.hypot(b.x-a.x,b.y-a.y);
 export function closest(p: Point, a: Point, b: Point): Point {
   const dx=b.x-a.x,dy=b.y-a.y,den=dx*dx+dy*dy;
@@ -30,18 +30,20 @@ export function validPolygon(p: Point[]) {
   return metrics({id:'',type:'',layer:'',points:p,nodes:p,closed:true,origin:'Sesión'}).area!>1e-12;
 }
 
-export function shapesFromDocument(doc: CadDocument,options:{world3D?:boolean}={}): Shape[] {
+export function shapesFromDocument(doc: CadDocument,options:{world3D?:boolean;excludeEntities?:Set<CadEntity>;style?:(e:CadEntity,parent:CadEntity|undefined,layer:string)=>CadEntity}={}): Shape[] {
   const out:Shape[]=[];
-  function walk(entities:CadEntity[], transform:(p:Point)=>Point, depth=0, inherited='0') {
+  function walk(entities:CadEntity[], transform:(p:Point)=>Point, depth=0, inherited='0',parentStyle?:CadEntity) {
     if(depth>12)return;
     for(const e of entities){
+      if(options.excludeEntities?.has(e))continue;
       const layer=e.layer&&e.layer!=='0'?e.layer:inherited;
+      const style=e.type==='INSERT'?(options.style?.(e,parentStyle,layer)??e):e;
       const l=doc.layers[layer]??Object.values(doc.layers).find(l=>l.name===layer);
       if(e.isVisible===false||e.isInPaperSpace||l?.isVisible===false||l?.isFrozen)continue;
       if(e.type==='INSERT'){
         const block=doc.blocks[e.blockName??e.name??'']; if(!block)continue;
         const base=block.basePoint??{x:0,y:0},pos=e.insertionPoint??{x:0,y:0},r=e.rotation??0,c=Math.cos(r),s=Math.sin(r);
-        walk(block.entities,p=>{if(options.world3D)return transform(insertedPoint(p,base,e));const x=(p.x-base.x)*(e.scale?.x??1),y=(p.y-base.y)*(e.scale?.y??1);return transform({x:pos.x+x*c-y*s,y:pos.y+x*s+y*c,z:(pos.z??0)+((p.z??0)-(base.z??0))*(e.scale?.z??1)});},depth+1,layer);continue;
+        walk(block.entities,p=>{if(options.world3D)return transform(insertedPoint(p,base,e));const x=(p.x-base.x)*(e.scale?.x??1),y=(p.y-base.y)*(e.scale?.y??1);return transform({x:pos.x+x*c-y*s,y:pos.y+x*s+y*c,z:(pos.z??0)+((p.z??0)-(base.z??0))*(e.scale?.z??1)});},depth+1,layer,style);continue;
       }
       let points:Point[]=[],nodes:Point[]=[],closed=!!e.isClosed,approximate=false;
       if(e.type==='LINE'&&e.startPoint&&e.endPoint)points=[e.startPoint,e.endPoint];
@@ -68,7 +70,7 @@ export function shapesFromDocument(doc: CadDocument,options:{world3D?:boolean}={
       if(['3DFACE','SOLID','TRACE'].includes(e.type)){const v=e.vertices??e.points??[];points=v.length===4&&e.type!=='3DFACE'?[v[0],v[1],v[3],v[2]]:v;nodes=points;closed=true;}
       if(!points.length||points.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)))continue;
       if(!nodes.length)nodes=points;
-      out.push({id:`file-${out.length}`,type:e.type,layer,points:points.map(p=>transform(options.world3D?planarPoint(p,e):p)),nodes:nodes.map(p=>transform(options.world3D?planarPoint(p,e):p)),closed,origin:'Plano',approximate,entity:e});
+      out.push({id:`file-${out.length}`,type:e.type,layer,points:points.map(p=>transform(options.world3D?planarPoint(p,e):p)),nodes:nodes.map(p=>transform(options.world3D?planarPoint(p,e):p)),closed,origin:'Plano',approximate,entity:e,parentStyle});
     }
   }
   walk(doc.entities,p=>({...p}));return out;

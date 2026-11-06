@@ -88,3 +88,7 @@ La barra vertical derecha permanece disponible en Model, Layouts, CAD 3D y BIM. 
 ### Alturas de DWG en la vista 3D
 
 La vista alámbrica aplica la elevación de polilíneas 2D y la orientación OCS de las entidades y bloques compatibles antes de situarlos en coordenadas del modelo. Conserva las cotas de las polilíneas 3D y muestra el rango Z y el número de trazos en Z=0. No desplaza automáticamente planos, perfiles o anotaciones para hacerlos coincidir con un diseño minero. Si el archivo contiene geometría realmente dibujada en Z=0 junto a labores a otra cota, esa diferencia se conserva. Los sólidos, mallas y objetos de aplicaciones mineras no compatibles pueden seguir incompletos; para validar un caso concreto hacen falta su DWG y una referencia visual.
+
+## Superficies CAD 3D
+
+La vista 3D renderiza caras compatibles con WebGL2 y permite elegir sombreado, aristas, alámbrico, líneas ocultas o transparencia desde Propiedades → Representación 3D. El botón Aspecto abre estos controles. Consulta [capacidades, uso, límites y mediciones con stopes.dxf](docs/cad-gpu-surfaces.md). El guardado DWG editado y la teselación completa de ACIS/objetos propietarios siguen sin estar disponibles.

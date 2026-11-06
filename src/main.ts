@@ -10,7 +10,7 @@ import { fidelityWarnings, prepareReferences, loadLocalReference } from './refer
 import { CadViewer, resolveCadColor, type CadDocument } from './vendor/cad/index';
 import '@flyfish-dev/cad-viewer/style.css';
 import './style.css';
-import { View3D } from './view-3d';
+import { CadGpuView as View3D } from './cad-gpu-view';
 import { LayerAwareDxfLoader } from './dxf-loader';
 
 import { layout } from './layout';
@@ -26,7 +26,7 @@ let navigation:Navigation|undefined;
 let fileRevision=0;
 let bim:BimViewer|undefined;
 let bimHost:HTMLElement|undefined;
-let is3D = false;
+let is3D = false;let modelSpatialFaces=false;let sourceStyleDirty=false;
 let view3D: View3D | undefined;
 let paperView: PaperView | undefined;
 let selectedSheet: DrawingSheet | undefined;
@@ -35,7 +35,7 @@ let documentModel: CadDocument | undefined;
 let currentName = '';
 let originalFile:File|undefined;
 const coordinateFormatter=new Intl.NumberFormat('es-PE',{minimumFractionDigits:3,maximumFractionDigits:3});
-let activePointer=0;let cursorFrame=0;let cursorEvent:PointerEvent|undefined;
+let pointerActive=false;let activePointer=0;let cursorFrame=0;let cursorEvent:PointerEvent|undefined;
 let workElevation:number|undefined;
 let tools: CadTools | undefined;
 const sessionLayers = new Map<string, { name: string; color: string; isVisible: boolean }>();
@@ -82,13 +82,14 @@ const viewer = new CadViewer({
   onViewChange(event) { if(bim||selectedSheet||is3D)return; const zoom = Math.round(zoomReferenceScale ? event.view.scale / zoomReferenceScale * 100 : event.zoomPercent); el('coordinates').textContent = `ZOOM ${zoom}%  •  LOCAL`; el('zoom-label').textContent = `${zoom}%`; tools?.redraw(); }
 });
 
+function currentCad3D():View3D|undefined{return view3D;}
 function worldShapes(doc:CadDocument){return shapesFromDocument(doc,{world3D:true}).map(s=>({...s,color:s.entity?resolveCadColor({...s.entity,layer:s.layer},doc):undefined}));}
-function updateWireInfo(shapes:ReturnType<typeof shapesFromDocument>){const z=heightSummary(shapes),fmt=(n:number)=>n.toLocaleString('es-PE',{maximumFractionDigits:3});el('wire-info').textContent=z?`Alturas Z: ${fmt(z.min)} a ${fmt(z.max)} · ${z.atZero} trazos en Z=0 · unidades del archivo`:'Sin geometría 3D compatible';}
-function setView3D(enabled: boolean) {
+function updateWireInfo(){const z=view3D?.heightSummary,fmt=(n:number)=>n.toLocaleString('es-PE',{maximumFractionDigits:3});el('wire-info').textContent=z?`Alturas Z: ${fmt(z.min)} a ${fmt(z.max)} · ${z.atZero} trazos en Z=0 · unidades del archivo · GPU`:'Sin geometría 3D compatible';}
+function setView3D(enabled: boolean,refresh=true) {
   if(enabled && !documentModel)return;
   if(selectedSheet){if(enabled)selectSpace('model');else return;}
-  if(enabled && !view3D){view3D=new View3D(el('viewer-3d'));view3D.background(document.querySelector('.shell')!.classList.contains('light-view'));}
-  is3D=enabled;el('wire-info').hidden=!enabled;
+  if(enabled && !view3D){try{view3D=new View3D(el('viewer-3d'));view3D.background(document.querySelector('.shell')!.classList.contains('light-view'));}catch(error){notice('No se pudo iniciar WebGL2. La vista Model 2D sigue disponible. '+String(error),true);return;}}
+  is3D=enabled;view3D?.setVisible(enabled);el('wire-info').hidden=!enabled;
   el('viewport').dataset.view3d=String(enabled);
   document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command').forEach(n=>n.hidden=enabled);
   el('viewer').hidden=enabled;
@@ -96,16 +97,16 @@ function setView3D(enabled: boolean) {
   
 
   el('mode-badge').textContent=enabled?'TÉCNICO · VISTA 3D':'TÉCNICO · VISTA 2D';
-  el('prop-view').textContent=enabled?'3D / alámbrica':'Superior / 2D';
+  el('prop-view').textContent=enabled?'3D / GPU':'Superior / 2D';
   el('view-label').textContent=enabled?'3D · COORDENADAS ORIGINALES':'SUPERIOR | 2D';
   el('view-hint').textContent=enabled?'Arrastrar: girar · Mayús + arrastrar: desplazar · Rueda: zoom':'Rueda: zoom · Arrastrar: desplazar';
   const dock=document.querySelector<HTMLElement>('.cad-dock');
   if(dock){dock.hidden=false;dock.inert=!!controller;}
   el('drawing-region').hidden=enabled||regions.length<2;
   if(enabled){
-    const shapes=worldShapes(documentModel!);const count=view3D!.setShapes(shapes);updateWireInfo(shapes);
-    notice(count?'Vista 3D de líneas y polilíneas. Los objetos no compatibles y los sólidos pueden no aparecer. Un plano sin cotas Z permanece plano.':'Este archivo no contiene líneas o polilíneas compatibles con la vista 3D.',!count);
-  }else {viewer.resize();const m=documentModel?.savedView?.sceneTransform;drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),m&&documentModel?.savedView?.sceneTransformApplied!==false?{x:{x:m.a,y:m.b},y:{x:m.c,y:m.d},z:{x:0,y:0}}:topAxes);}
+    const count=view3D!.setDocument(documentModel!);updateWireInfo();
+    notice(count?'Vista 3D por GPU. Las caras compatibles se sombrean; consulta Representación 3D y sus avisos. ACIS y objetos sin teselación pueden faltar.':'Este archivo no contiene líneas o polilíneas compatibles con la vista 3D.',!count);
+  }else {if(sourceStyleDirty&&documentModel){const state=viewer.renderer.getViewState();viewer.renderer.setDocument(documentModel);viewer.renderer.setViewState(state);sourceStyleDirty=false;}viewer.resize();if(refresh)tools?.refresh();const m=documentModel?.savedView?.sceneTransform;drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),m&&documentModel?.savedView?.sceneTransformApplied!==false?{x:{x:m.a,y:m.b},y:{x:m.c,y:m.d},z:{x:0,y:0}}:topAxes);}
   navigation?.refresh();
 }
 
@@ -134,7 +135,7 @@ function selectSpace(id:string){
     el('mode-badge').textContent='PRESENTACIÓN · 2D';el('prop-view').textContent=selectedSheet.name;el('view-label').textContent=`LAYOUT · ${selectedSheet.name}`;
     el('paper-info').textContent=selectedSheet.width&&selectedSheet.height?`${selectedSheet.width.toFixed(2)} × ${selectedSheet.height.toFixed(2)} ${selectedSheet.units} · ${selectedSheet.viewports.length} viewport(s)`:'Formato de papel no disponible · encuadre por contenido';
     el('view-hint').textContent='Rueda: zoom · Arrastrar: desplazar la hoja';
-  }else setView3D(false);
+  }else setView3D(modelSpatialFaces);
   showDrawingWarnings(viewer.getLoadResult()?.warnings??[]);renderSpaces();controls();
 }
 
@@ -206,14 +207,15 @@ function renderLayers() {
           candidate.isFrozen = false;
         }
       }
-      if (documentModel) {
+      if (documentModel&&!is3D&&!selectedSheet) {
         const state = viewer.renderer.getViewState();
         viewer.renderer.setDocument(documentModel);
         viewer.renderer.setViewState(state);
       }
+      if(is3D||selectedSheet)sourceStyleDirty=true;
       if(selectedSheet && documentModel)paperView?.setSheet(documentModel,selectedSheet,false);
-      if(is3D && documentModel){const shapes=worldShapes(documentModel);view3D?.setShapes(shapes,false);updateWireInfo(shapes);}
-      tools?.refresh();
+      if(is3D && documentModel){view3D?.updateVisibility();updateWireInfo();}
+      if(!is3D&&!selectedSheet)tools?.refresh();
     };
     if (layer.name === activeLayer) row.classList.add('active-layer');
     row.append(check, swatch, name); host.append(row);
@@ -233,7 +235,7 @@ async function openBim(file:File,companions:File[]){
   try{
     const {BimViewer}=await import('./bim-viewer');if(signal.aborted)throw new DOMException('Cancelado','AbortError');
     candidate=new BimViewer(host);const result=await candidate.load(file,companions,signal,message=>el('progress-text').textContent=message);
-    closeBim();bim=candidate;bimHost=host;host.style.visibility='';el('viewer-bim').hidden=false;document.querySelector('.shell')!.classList.add('bim-mode');
+    closeBim();view3D?.destroy();view3D=undefined;is3D=false;bim=candidate;bimHost=host;viewer.clear();documentModel=undefined;originalFile=undefined;active=false;sourceStyleDirty=false;tools?.reset(true);host.style.visibility='';el('viewer-bim').hidden=false;document.querySelector('.shell')!.classList.add('bim-mode');
     el('wire-info').hidden=true;el('viewer').hidden=true;el('viewer-paper').hidden=true;el('viewer-3d').hidden=true;el('empty').hidden=true;el('paper-info').hidden=true;el('drawing-region').hidden=true;el('layout-tabs').hidden=true;
     document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command').forEach(n=>n.hidden=true);el('viewport').dataset.view3d='true';
     document.querySelector('.viewer-title span')!.textContent='Modelo 3D · Elementos y propiedades';el('tab').textContent=file.name;el('mode-badge').textContent='MODELO BIM · 3D';el('view-label').textContent=result.format+' · 3D';el('view-hint').textContent='Arrastrar: girar · Botón derecho: desplazar · Rueda: zoom';el('zoom-label').textContent='3D';el('coordinates').textContent='MODELO BIM · LOCAL';
@@ -253,16 +255,18 @@ async function open(file: File,companions:File[]=[]) {
   el('progress-text').textContent = 'Abriendo plano…';
   try {
     const result = await viewer.loadFile(file, { signal: controller.signal });
-    closeBim();
+    closeBim();view3D?.destroy();view3D=undefined;
     sessionLayers.clear(); activeLayer = 'MX_TRAZOS'; el('layer-error').hidden = true;
-    documentModel = viewer.renderer.getSourceDocument(); active = true; currentName = file.name;originalFile=file;fileRevision++;
+    documentModel = viewer.renderer.getSourceDocument();sourceStyleDirty=false; active = true; currentName = file.name;originalFile=file;fileRevision++;
     selectedSheet=undefined;el('viewer-paper').hidden=true;el('paper-info').hidden=true;
     if(documentModel)prepareReferences(documentModel);
     viewer.renderer.setDocument(documentModel!);renderSpaces();
-    setView3D(false);
-    tools?.reset();
+    setView3D(false,false);
+    let faceMin=Infinity,faceMax=-Infinity;for(const e of documentModel?.entities??[])if(e.type==='3DFACE'||e.meshFaces){for(const p of (e.meshVertices??e.vertices??e.points??[]) as {z?:number}[]){faceMin=Math.min(faceMin,p.z??0);faceMax=Math.max(faceMax,p.z??0);}}const spatialFaces=faceMax-faceMin>1e-7;modelSpatialFaces=spatialFaces;
+    tools?.reset(spatialFaces);
     prepareRegions();
-    const heights=heightSummary(worldShapes(documentModel!));workElevation=heights&&Math.abs(heights.max-heights.min)<1e-7?heights.min:undefined;
+    if(spatialFaces)setView3D(true);
+    const heights=is3D?currentCad3D()?.heightSummary:heightSummary(worldShapes(documentModel!));workElevation=heights&&Math.abs(heights.max-heights.min)<1e-7?heights.min:undefined;
     el('empty').hidden = true;
     el('filename').textContent = file.name; el('tab').textContent = file.name;
     el('filemeta').textContent = `${result.format.toUpperCase()} · ${(file.size / 1024).toLocaleString('es-PE', { maximumFractionDigits: 1 })} KB`;
@@ -295,10 +299,10 @@ el('new-layer-form').onsubmit = e => {
 };
 el('clear').onclick = () => {
   if (controller) return;
-  closeBim();fileRevision++;
+  closeBim();view3D?.destroy();view3D=undefined;sourceStyleDirty=false;viewer.clear();fileRevision++;
   selectedSheet=undefined;el('viewer-paper').hidden=true;el('paper-info').hidden=true;
   setView3D(false);
-  zoomReferenceScale=undefined;viewer.clear(); active = false; documentModel = undefined; currentName = '';originalFile=undefined;workElevation=undefined;
+  zoomReferenceScale=undefined;viewer.clear(); active = false;modelSpatialFaces=false; documentModel = undefined; currentName = '';originalFile=undefined;workElevation=undefined;
   sessionLayers.clear(); activeLayer = 'MX_TRAZOS'; el('layer-error').hidden = true;
   tools?.reset();
   regions=[];regionIndex=0;el('drawing-region').hidden=true;
@@ -355,7 +359,7 @@ viewport.addEventListener('dragover', e => { e.preventDefault(); viewport.classL
 viewport.addEventListener('dragleave', e => { if (!viewport.contains(e.relatedTarget as Node)) viewport.classList.remove('dragging'); });
 viewport.addEventListener('drop', e => { e.preventDefault(); viewport.classList.remove('dragging'); const files=Array.from(e.dataTransfer?.files??[]);if(files.length)openFiles(files); });
 window.addEventListener('keydown', e => {
-  if(e.key==='Escape'){const canvas=navigationAdapter().canvas;canvas.dispatchEvent(new PointerEvent('pointercancel',{pointerId:activePointer,bubbles:true}));if(canvas.hasPointerCapture(activePointer))canvas.releasePointerCapture(activePointer);if(el('viewport').hasPointerCapture(activePointer))el('viewport').releasePointerCapture(activePointer);tools?.escape();view3D?.escape();paperView?.escape();bim?.escape();const n=el('notice');if(!n.classList.contains('error'))n.hidden=true;}
+  if(e.key==='Escape'){const canvas=navigationAdapter().canvas;if(pointerActive)canvas.dispatchEvent(new PointerEvent('pointercancel',{pointerId:activePointer,bubbles:true}));pointerActive=false;if(canvas.hasPointerCapture(activePointer))canvas.releasePointerCapture(activePointer);if(el('viewport').hasPointerCapture(activePointer))el('viewport').releasePointerCapture(activePointer);tools?.escape();view3D?.escape();paperView?.escape();bim?.escape();const n=el('notice');if(!n.classList.contains('error'))n.hidden=true;}
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); selectFile(); }
   else if (!(e.target instanceof HTMLInputElement) && (active||!!bim) && !controller && e.key.toLowerCase() === 'f') navigation?.change(()=>fitDrawing());
 });
@@ -371,7 +375,7 @@ function navigationAdapter():NavigationAdapter {
   const enabled=!!(active||bim)&&!controller;
   if(bim)return {key:fileRevision+':bim',revision:fileRevision,context,enabled,canvas:bim.canvas,state:()=>bim!.getState(),restore:s=>bim!.setState(s),zoom:f=>bim!.zoom(f),fit:()=>bim!.fit(),window:b=>bim!.zoomWindow(b),setMode:m=>bim!.setInteractionMode(m),preset:v=>bim!.preset(v)};
   if(selectedSheet&&paperView)return {key:fileRevision+':paper:'+selectedSheet.id,revision:fileRevision,context,enabled,canvas:paperView.canvas,state:()=>paperView!.getState(),restore:s=>paperView!.setState(s),zoom:f=>paperView!.zoom(f),fit:()=>paperView!.fit(),window:b=>paperView!.zoomWindow(b),setMode:m=>paperView!.setInteractionMode(m)};
-  if(is3D&&view3D)return {key:fileRevision+':wire',revision:fileRevision,context,enabled,canvas:view3D.canvas,state:()=>view3D!.getState(),restore:s=>view3D!.setState(s),zoom:f=>view3D!.zoom(f),fit:()=>view3D!.fit(),window:b=>view3D!.zoomWindow(b),setMode:m=>view3D!.setInteractionMode(m),preset:v=>{if(v==='top')setView3D(false);else view3D!.preset(v);}};
+  if(is3D&&view3D)return {key:fileRevision+':wire',revision:fileRevision,context,enabled,canvas:view3D.canvas,state:()=>view3D!.getState(),restore:s=>view3D!.setState(s),zoom:f=>view3D!.zoom(f),fit:()=>view3D!.fit(),window:b=>view3D!.zoomWindow(b),setMode:m=>view3D!.setInteractionMode(m),preset:v=>{if(v==='top'&&!view3D!.metrics.triangles)setView3D(false);else view3D!.preset(v);}};
   return {key:fileRevision+':model',revision:fileRevision,context:'model',enabled,canvas:viewer.canvas,state:()=>viewer.renderer.getViewState(),restore:s=>viewer.renderer.setViewState(s),zoom:f=>viewer.renderer.zoom(f),fit:()=>fitDrawing(),window:b=>{const state=viewer.renderer.getViewState(),center=viewer.renderer.screenToWorld({x:b.x+b.width/2,y:b.y+b.height/2});viewer.renderer.setViewState({centerX:center.x,centerY:center.y,scale:state.scale*Math.min(viewer.canvas.clientWidth/b.width,viewer.canvas.clientHeight/b.height)});},mode:()=>tools?.getNavigationMode()??'select',setMode:m=>{if(m==='orbit'){setView3D(true);return;}tools?.setNavigationMode(m==='pan'?'pan':'select');},preset:v=>{if(v==='top')fitDrawing();else{setView3D(true);view3D?.preset(v);}}};
 }
 navigation=new Navigation(navigationAdapter);
@@ -381,6 +385,7 @@ if(location.hostname==='127.0.0.1'&&new URLSearchParams(location.search).get('be
     zoom:(f:number)=>selectedSheet?paperView!.zoom(f):viewer.renderer.zoom(f),
     pan:(dx:number,dy:number)=>{if(selectedSheet){const v=(paperView as any).view;v.centerX-=dx/v.scale;v.centerY+=dy/v.scale;paperView!.draw();}else viewer.renderer.panByScreenDelta(dx,dy);},
     sheet:(i:number)=>selectSpace(sheetsOf(documentModel)[i].id),
+    cad3D:()=>view3D,document:()=>documentModel,
     canvas:()=>selectedSheet?paperView!.canvas:viewer.canvas
   };
 }
@@ -402,13 +407,14 @@ el('save-confirm').onclick=async()=>{
 };
 el('maximize').onclick=()=>{const shell=document.querySelector('.shell')!,max=shell.classList.toggle('workspace-maximized');el('maximize').setAttribute('aria-pressed',String(max));requestAnimationFrame(()=>{viewer.resize();if(selectedSheet)paperView?.fit();});};
 viewport.addEventListener('mx:axes',e=>drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),(e as CustomEvent).detail));
+viewport.addEventListener('mx:frame-selection',()=>navigation?.change(()=>view3D?.fitSelection()));
 viewport.addEventListener('mx:selectshape',e=>tools?.selectExternal((e as CustomEvent).detail));
-viewport.addEventListener('mx:entityedit',()=>{if(selectedSheet&&documentModel)paperView?.setSheet(documentModel,selectedSheet,false);if(is3D&&documentModel)view3D?.setShapes(worldShapes(documentModel),false);});
+viewport.addEventListener('mx:entityedit',event=>{if(is3D||selectedSheet)sourceStyleDirty=true;if(selectedSheet&&documentModel)paperView?.setSheet(documentModel,selectedSheet,false);if(is3D&&documentModel)view3D?.updateEntity((event as CustomEvent).detail?.entity);});
 drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),topAxes);
 viewport.addEventListener('pointermove',e=>{cursorEvent=e;if(cursorFrame)return;cursorFrame=requestAnimationFrame(()=>{cursorFrame=0;const e=cursorEvent!;let label='Coordenadas del dibujo',p:{x:number;y:number;z?:number}|undefined;
- if(bim){label='Geometría BIM importada';p=bim.cursorPoint(e.clientX,e.clientY);}else if(selectedSheet&&paperView){label='Papel ('+selectedSheet.units+') · X / Y';const r=paperView.canvas.getBoundingClientRect();p=paperView.paperPoint(e.clientX-r.left,e.clientY-r.top);}else if(is3D&&view3D){label='Segmento cercano · coordenadas del dibujo';if(!e.buttons)p=view3D.cursorPoint(e.clientX,e.clientY);}else if(active){const r=viewer.canvas.getBoundingClientRect();p={...drawingPoint(viewer.renderer.screenToWorld({x:e.clientX-r.left,y:e.clientY-r.top}),documentModel),z:workElevation};}
+ if(bim){label='Geometría BIM importada';p=bim.cursorPoint(e.clientX,e.clientY);}else if(selectedSheet&&paperView){label='Papel ('+selectedSheet.units+') · X / Y';const r=paperView.canvas.getBoundingClientRect();p=paperView.paperPoint(e.clientX-r.left,e.clientY-r.top);}else if(is3D&&view3D){label='Punto sobre superficie · coordenadas del dibujo';if(!e.buttons)p=view3D.cursorPoint(e.clientX,e.clientY);}else if(active){const r=viewer.canvas.getBoundingClientRect();p={...drawingPoint(viewer.renderer.screenToWorld({x:e.clientX-r.left,y:e.clientY-r.top}),documentModel),z:workElevation};}
  const f=(n:number|undefined)=>n===undefined?'—':coordinateFormatter.format(n);el('cursor-coordinates').textContent=selectedSheet?`${label}: ${f(p?.x)} / ${f(p?.y)} · Elevación: —`:`${label} · Norte: ${f(p?.y)} | Este: ${f(p?.x)} | Elevación: ${f(p?.z)} · ${bim?'unidades de la geometría importada':el('prop-units').textContent}`;
  });});
 viewport.addEventListener('pointerleave',()=>{if(cursorFrame)cancelAnimationFrame(cursorFrame);cursorFrame=0;el('cursor-coordinates').textContent='Coordenadas del dibujo · Norte: — | Este: — | Elevación: —';});
 
-viewport.addEventListener('pointerdown',e=>{activePointer=e.pointerId;},true);
+window.addEventListener('pointerdown',e=>{if(viewport.contains(e.target as Node)){activePointer=e.pointerId;pointerActive=true;}},true);window.addEventListener('pointerup',()=>pointerActive=false,true);window.addEventListener('pointercancel',()=>pointerActive=false,true);
