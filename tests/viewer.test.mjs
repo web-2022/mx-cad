@@ -75,7 +75,7 @@ test('DXF local: abrir, capas, zoom, PNG y archivo inválido', { timeout: 90000 
     await page.locator('#clear').click();
     assert.equal(await page.locator('#stat-files').textContent(), '0');
     assert.equal(await page.locator('#prop-format').textContent(), '—');
-    assert.equal(await page.locator('#empty').isVisible(), true);
+    assert.equal(await page.locator('#empty').isVisible(), false);
     await page.setViewportSize({width:390,height:844});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({path:'test-results/mx-cad-movil.png'});

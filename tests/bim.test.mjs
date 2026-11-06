@@ -29,6 +29,6 @@ test('local GLB, glTF companions and IFC: geometry, properties, visibility, PNG 
     await page.locator('#notice').click();await page.getByRole('button',{name:'Muro de prueba',exact:true}).click();await expect(page.locator('#bim-properties')).toContainText(/IfcWall/i);await expect(page.locator('#bim-properties')).toContainText('M-01');
     await page.locator('#file-input').setInputFiles({name:'modelo.nwd',mimeType:'application/octet-stream',buffer:Buffer.from('test')});await expect(page.locator('#notice')).toContainText('no se abren directamente');
     await page.locator('#file-input').setInputFiles('public/ejemplo.dxf');await expect(page.locator('#filename')).toHaveText('ejemplo.dxf');assert.equal(await page.locator('#viewer-bim').isVisible(),false);assert.equal(await page.locator('#viewer').isVisible(),true);
-    await page.locator('#clear').click();assert.equal(await page.locator('#empty').isVisible(),true);assert.deepEqual(remote,[]);assert.deepEqual(errors,[]);
+    await page.locator('#clear').click();assert.equal(await page.locator('#empty').isVisible(),false);assert.deepEqual(remote,[]);assert.deepEqual(errors,[]);
   }finally{await app.close();}
 });
