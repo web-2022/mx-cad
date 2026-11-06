@@ -714,7 +714,7 @@ export class CadCanvasRenderer {
     const valign = mtext?3:Number(e.valign ?? 0);
     ctx.textAlign = halign === 1 || halign === 4 ? 'center' : halign === 2 ? 'right' : 'left';
     ctx.textBaseline = valign === 1 ? 'bottom' : valign === 2 ? 'middle' : valign === 3 ? 'top' : 'alphabetic';
-    const lines=wrapText(text,mtext?Number(e.rectWidth??e.width??0)*this.view.scale:0,t=>ctx.measureText(t).width),spacing=pixelHeight*1.22*Number(e.lineSpacing??1);
+    const lines=wrapText(text,mtext?Number(e.rectWidth??e.width??0)*this.view.scale/Math.max(Math.abs(xScale),1e-9):0,t=>ctx.measureText(t).width),spacing=pixelHeight*1.22*Number(e.lineSpacing??1);
     const offset=mtext?(Math.floor((attachment-1)/3)===1?-(lines.length*spacing)/2:Math.floor((attachment-1)/3)===2?-lines.length*spacing:0):0;
     for (const [index,line]of lines.entries()) {
       const glyph=typeof e.fontFile==='string'&&/\.shx$/i.test(e.fontFile)?this.opts.shxGlyphResolver?.resolveText(line,e.fontFile):undefined;
