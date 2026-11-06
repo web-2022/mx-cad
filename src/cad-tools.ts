@@ -37,7 +37,7 @@ export class CadTools {
     document.getElementById('snap-line')!.onclick=()=>{this.snapLine=!this.snapLine;this.sync();};
     document.getElementById('finish-polygon')!.onclick=()=>this.finish();
     document.getElementById('undo-drawing')!.onclick=()=>{if(this.pending.length)this.pending.pop();else{const removed=this.drawings.pop();if(removed===this.selected)this.select();}this.redraw();this.sync();};
-    const actions=document.createElement('div');actions.innerHTML='<button id="undo-property" title="Deshacer cambio de color">↶ Color</button><button id="redo-property" title="Rehacer cambio de color">↷ Color</button>';selection.append(actions);const measureSpace=document.createElement('select');measureSpace.id='measure-space';measureSpace.setAttribute('aria-label','Plano de medición');measureSpace.innerHTML='<option value="xy">Medir XY</option><option value="3d">Medir espacial (puntos capturados)</option>';selection.append(measureSpace);
+    const actions=document.createElement('div');actions.innerHTML='<button id="undo-property" title="Deshacer cambio de color">↶ Color</button><button id="redo-property" title="Rehacer cambio de color">↷ Color</button>';selection.append(actions);const measureSpace=document.createElement('select');measureSpace.id='measure-space';measureSpace.setAttribute('aria-label','Espacio de medición de ángulos');measureSpace.innerHTML='<option value="xy">Ángulos XY</option><option value="3d">Ángulos espaciales (puntos capturados)</option>';selection.append(measureSpace);
     document.getElementById('undo-property')!.onclick=()=>{if(this.edits.undo())this.changed();};document.getElementById('redo-property')!.onclick=()=>{if(this.edits.redo())this.changed();};
     document.getElementById('save-drawings')!.onclick=()=>this.download();
     this.viewport.addEventListener('pointerdown',e=>{
@@ -86,7 +86,7 @@ export class CadTools {
   private snap(p:Point):Point{
     this.snapped=undefined;let best=this.tolerance(),found:Point|undefined;
     const candidates=this.candidates(p,best);
-    if(this.snapPoint){for(const s of candidates)for(const n of s.nodes){const d=distance(p,n);if(d<best){best=d;found={...n,z:this.worldShapes.get(s.id)?.nodes[s.nodes.indexOf(n)]?.z??n.z};}}
+    if(this.snapPoint){for(const s of candidates)for(const n of s.nodes){const d=distance(p,n);if(d<best){best=d;found={...n,z:this.worldShapes.get(s.id)?.nodes[s.nodes.indexOf(n)]?.z??n.z??0};}}
       for(const n of this.pending){const d=distance(p,n);if(d<best){best=d;found=n;}}}
     // Prefer an exact vertex over a segment projection when both are in range.
     if(!found&&this.snapLine)for(const s of candidates)for(const [a,b]of this.edges(s)){const q=closest(p,a,b),d=distance(p,q);if(d<best){best=d;found=q;}}
@@ -170,7 +170,7 @@ export class CadTools {
       else node.setAttribute('points',screen.map(p=>`${p.x},${p.y}`).join(' '));
       node.setAttribute('stroke',selected?'#ffee75':this.layerOptions.color(s.layer));node.setAttribute('stroke-width',selected?'3':'2');node.setAttribute('fill',s.closed?'#f9bc3920':'none');
       if(s.type==='MEDICION')node.setAttribute('stroke-dasharray','6 4');this.svg.append(node);
-      if(s.type==='MEDICION'){const a=screen[0],b=screen.at(-1)!;const label=document.createElementNS(ns,'text');label.setAttribute('x',String((a.x+b.x)/2+8));label.setAttribute('y',String((a.y+b.y)/2-8));label.setAttribute('fill','#ffee75');label.setAttribute('stroke','#172642');label.setAttribute('stroke-width','3');label.setAttribute('paint-order','stroke');label.setAttribute('font-size','12');const unit:Record<string,string>={'Metros':'m','Milímetros':'mm','Centímetros':'cm','Kilómetros':'km','Pulgadas':'in','Pies':'ft'};label.textContent=metrics(s).length.toFixed(3)+' '+(unit[document.getElementById('prop-units')!.textContent??'']??'ud');this.svg.append(label);}
+      if(s.type==='MEDICION'){const a=screen[0],b=screen.at(-1)!;const label=document.createElementNS(ns,'text');label.setAttribute('x',String((a.x+b.x)/2+8));label.setAttribute('y',String((a.y+b.y)/2-8));label.setAttribute('fill','#ffee75');label.setAttribute('stroke','#172642');label.setAttribute('stroke-width','3');label.setAttribute('paint-order','stroke');label.setAttribute('font-size','12');const unit:Record<string,string>={'Metros':'m','Milímetros':'mm','Centímetros':'cm','Kilómetros':'km','Pulgadas':'in','Pies':'ft'};label.textContent='XY · '+metrics(s).length.toFixed(3)+' '+(unit[document.getElementById('prop-units')!.textContent??'']??'ud');this.svg.append(label);}
     };
     for(const s of this.drawings)if(this.layerOptions.visible(s.layer))draw(s,s===this.selected);
     if(this.selected?.origin==='Plano')draw(this.selected,true);
