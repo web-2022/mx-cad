@@ -1,3 +1,4 @@
+import {ShapeIndex} from './shape-index.ts';
 import type { Shape, Point } from './geometry';
 
 export function projectPoint(p: Point, center: Point, yaw: number, pitch: number) {
@@ -11,6 +12,7 @@ export function projectPoint(p: Point, center: Point, yaw: number, pitch: number
 export class View3D {
   readonly canvas=document.createElement('canvas');
   private shapes: Shape[]=[];
+  private cursorIndex?:ShapeIndex;private projectedSources=new Map<string,Shape>();
   private center: Point={x:0,y:0,z:0};
   private yaw=-Math.PI/4;
   private pitch=Math.PI/5;
@@ -67,12 +69,13 @@ export class View3D {
   cursorPoint(clientX:number,clientY:number){
     const r=this.canvas.getBoundingClientRect(),p={x:clientX-r.left,y:clientY-r.top};let best=8,result:Point|undefined;
     const screen=(v:Point)=>{const q=projectPoint(v,this.center,this.yaw,this.pitch);return {x:this.host.clientWidth/2+this.pan.x+q.x*this.scale,y:this.host.clientHeight/2+this.pan.y-q.y*this.scale};};
-    for(const shape of this.shapes){const points=shape.closed?[...shape.points,shape.points[0]]:shape.points;
+    if(!this.cursorIndex){const projected=this.shapes.map(shape=>({...shape,points:shape.points.map(screen)}));this.cursorIndex=new ShapeIndex(projected);this.projectedSources=new Map(this.shapes.map(s=>[s.id,s]));}
+    for(const candidate of this.cursorIndex.query(p.x,p.y,8)){const shape=this.projectedSources.get(candidate.id)!;const points=shape.closed?[...shape.points,shape.points[0]]:shape.points;
       for(let i=0;i<points.length;i++){const a=points[i],b=points[Math.min(i+1,points.length-1)],u=screen(a),v=screen(b),dx=v.x-u.x,dy=v.y-u.y,den=dx*dx+dy*dy,t=den?Math.max(0,Math.min(1,((p.x-u.x)*dx+(p.y-u.y)*dy)/den)):0,d=Math.hypot(p.x-u.x-t*dx,p.y-u.y-t*dy);if(d<best){best=d;result={x:a.x+t*(b.x-a.x),y:a.y+t*(b.y-a.y),z:(a.z??0)+t*((b.z??0)-(a.z??0))};}}
     }return result;
   }
   draw(){
-    const width=this.host.clientWidth,height=this.host.clientHeight;if(!width||!height)return;
+    this.cursorIndex=undefined;const width=this.host.clientWidth,height=this.host.clientHeight;if(!width||!height)return;
     if(this.frame){cancelAnimationFrame(this.frame);this.frame=0;}
     const ratio=Math.min(devicePixelRatio||1,2),cw=Math.round(width*ratio),ch=Math.round(height*ratio);if(this.canvas.width!==cw||this.canvas.height!==ch){this.canvas.width=cw;this.canvas.height=ch;}
     const ctx=this.canvas.getContext('2d');if(!ctx)return;ctx.setTransform(ratio,0,0,ratio,0,0);
