@@ -5,8 +5,8 @@ import { separateDrawingSpaces, record } from './drawing-spaces.ts';
 export interface DxfPair {code:number;value:string}
 export interface DxfRecord {type:string;section:string;pairs:DxfPair[]}
 export function scanDxf(text:string,compact=false):DxfRecord[]{
-  const out:DxfRecord[]=[];let section='',current:DxfRecord|undefined,at=0,pendingSection=false;
-  const next=()=>{if(at>=text.length)return undefined;const end=text.indexOf('\n',at),line=text.slice(at,end<0?text.length:end).replace(/\r$/,'');at=end<0?text.length:end+1;return line;};
+  const out:DxfRecord[]=[];let section='',current:DxfRecord|undefined,at=0,pendingSection=false,nextLF=text.indexOf('\n'),nextCR=text.indexOf('\r');
+  const next=()=>{if(at>=text.length)return undefined;const end=nextLF<0?nextCR:nextCR<0?nextLF:Math.min(nextLF,nextCR),line=text.slice(at,end<0?text.length:end);at=end<0?text.length:end+1;if(text[end]==='\r'&&text[at]==='\n')at++;if(nextLF>=0&&nextLF<at)nextLF=text.indexOf('\n',at);if(nextCR>=0&&nextCR<at)nextCR=text.indexOf('\r',at);return line;};
   const common=new Set([5,8,330,410,67,370,6,48,62,420,440,7,70]);
   while(at<text.length){const raw=next(),rawValue=next();if(raw===undefined||rawValue===undefined)break;const code=Number(raw.trim()),value=[1,3].includes(code)?rawValue:rawValue.trim();if(!Number.isFinite(code))continue;
     if(pendingSection&&code===2){section=value;pendingSection=false;continue;}
