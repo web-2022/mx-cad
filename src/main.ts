@@ -26,7 +26,7 @@ let navigation:Navigation|undefined;
 let fileRevision=0;
 let bim:BimViewer|undefined;
 let bimHost:HTMLElement|undefined;
-let is3D = false;let modelSpatialFaces=false;
+let is3D = false;let modelSpatialFaces=false;let sourceStyleDirty=false;
 let view3D: View3D | undefined;
 let paperView: PaperView | undefined;
 let selectedSheet: DrawingSheet | undefined;
@@ -105,7 +105,7 @@ function setView3D(enabled: boolean,refresh=true) {
   if(enabled){
     const count=view3D!.setDocument(documentModel!);updateWireInfo();
     notice(count?'Vista 3D por GPU. Las caras compatibles se sombrean; consulta Representación 3D y sus avisos. ACIS y objetos sin teselación pueden faltar.':'Este archivo no contiene líneas o polilíneas compatibles con la vista 3D.',!count);
-  }else {viewer.resize();if(refresh)tools?.refresh();const m=documentModel?.savedView?.sceneTransform;drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),m&&documentModel?.savedView?.sceneTransformApplied!==false?{x:{x:m.a,y:m.b},y:{x:m.c,y:m.d},z:{x:0,y:0}}:topAxes);}
+  }else {if(sourceStyleDirty&&documentModel){const state=viewer.renderer.getViewState();viewer.renderer.setDocument(documentModel);viewer.renderer.setViewState(state);sourceStyleDirty=false;}viewer.resize();if(refresh)tools?.refresh();const m=documentModel?.savedView?.sceneTransform;drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),m&&documentModel?.savedView?.sceneTransformApplied!==false?{x:{x:m.a,y:m.b},y:{x:m.c,y:m.d},z:{x:0,y:0}}:topAxes);}
   navigation?.refresh();
 }
 
@@ -206,14 +206,15 @@ function renderLayers() {
           candidate.isFrozen = false;
         }
       }
-      if (documentModel) {
+      if (documentModel&&!is3D&&!selectedSheet) {
         const state = viewer.renderer.getViewState();
         viewer.renderer.setDocument(documentModel);
         viewer.renderer.setViewState(state);
       }
+      if(is3D||selectedSheet)sourceStyleDirty=true;
       if(selectedSheet && documentModel)paperView?.setSheet(documentModel,selectedSheet,false);
-      if(is3D && documentModel){view3D?.setDocument(documentModel,false);updateWireInfo();}
-      tools?.refresh();
+      if(is3D && documentModel){view3D?.updateVisibility();updateWireInfo();}
+      if(!is3D&&!selectedSheet)tools?.refresh();
     };
     if (layer.name === activeLayer) row.classList.add('active-layer');
     row.append(check, swatch, name); host.append(row);
@@ -233,7 +234,7 @@ async function openBim(file:File,companions:File[]){
   try{
     const {BimViewer}=await import('./bim-viewer');if(signal.aborted)throw new DOMException('Cancelado','AbortError');
     candidate=new BimViewer(host);const result=await candidate.load(file,companions,signal,message=>el('progress-text').textContent=message);
-    closeBim();bim=candidate;bimHost=host;host.style.visibility='';el('viewer-bim').hidden=false;document.querySelector('.shell')!.classList.add('bim-mode');
+    closeBim();view3D?.destroy();view3D=undefined;is3D=false;bim=candidate;bimHost=host;viewer.clear();documentModel=undefined;originalFile=undefined;active=false;sourceStyleDirty=false;tools?.reset(true);host.style.visibility='';el('viewer-bim').hidden=false;document.querySelector('.shell')!.classList.add('bim-mode');
     view3D?.setVisible(false);el('wire-info').hidden=true;el('viewer').hidden=true;el('viewer-paper').hidden=true;el('viewer-3d').hidden=true;el('empty').hidden=true;el('paper-info').hidden=true;el('drawing-region').hidden=true;el('layout-tabs').hidden=true;
     document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command').forEach(n=>n.hidden=true);el('viewport').dataset.view3d='true';
     document.querySelector('.viewer-title span')!.textContent='Modelo 3D · Elementos y propiedades';el('tab').textContent=file.name;el('mode-badge').textContent='MODELO BIM · 3D';el('view-label').textContent=result.format+' · 3D';el('view-hint').textContent='Arrastrar: girar · Botón derecho: desplazar · Rueda: zoom';el('zoom-label').textContent='3D';el('coordinates').textContent='MODELO BIM · LOCAL';
@@ -253,9 +254,9 @@ async function open(file: File,companions:File[]=[]) {
   el('progress-text').textContent = 'Abriendo plano…';
   try {
     const result = await viewer.loadFile(file, { signal: controller.signal });
-    closeBim();
+    closeBim();view3D?.destroy();view3D=undefined;
     sessionLayers.clear(); activeLayer = 'MX_TRAZOS'; el('layer-error').hidden = true;
-    documentModel = viewer.renderer.getSourceDocument(); active = true; currentName = file.name;originalFile=file;fileRevision++;
+    documentModel = viewer.renderer.getSourceDocument();sourceStyleDirty=false; active = true; currentName = file.name;originalFile=file;fileRevision++;
     selectedSheet=undefined;el('viewer-paper').hidden=true;el('paper-info').hidden=true;
     if(documentModel)prepareReferences(documentModel);
     viewer.renderer.setDocument(documentModel!);renderSpaces();
@@ -297,7 +298,7 @@ el('new-layer-form').onsubmit = e => {
 };
 el('clear').onclick = () => {
   if (controller) return;
-  closeBim();fileRevision++;
+  closeBim();view3D?.destroy();view3D=undefined;sourceStyleDirty=false;viewer.clear();fileRevision++;
   selectedSheet=undefined;el('viewer-paper').hidden=true;el('paper-info').hidden=true;
   setView3D(false);
   zoomReferenceScale=undefined;viewer.clear(); active = false;modelSpatialFaces=false; documentModel = undefined; currentName = '';originalFile=undefined;workElevation=undefined;
@@ -407,7 +408,7 @@ el('maximize').onclick=()=>{const shell=document.querySelector('.shell')!,max=sh
 viewport.addEventListener('mx:axes',e=>drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),(e as CustomEvent).detail));
 viewport.addEventListener('mx:frame-selection',()=>navigation?.change(()=>view3D?.fitSelection()));
 viewport.addEventListener('mx:selectshape',e=>tools?.selectExternal((e as CustomEvent).detail));
-viewport.addEventListener('mx:entityedit',event=>{if(selectedSheet&&documentModel)paperView?.setSheet(documentModel,selectedSheet,false);if(is3D&&documentModel)view3D?.updateEntity((event as CustomEvent).detail?.entity);});
+viewport.addEventListener('mx:entityedit',event=>{if(is3D||selectedSheet)sourceStyleDirty=true;if(selectedSheet&&documentModel)paperView?.setSheet(documentModel,selectedSheet,false);if(is3D&&documentModel)view3D?.updateEntity((event as CustomEvent).detail?.entity);});
 drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),topAxes);
 viewport.addEventListener('pointermove',e=>{cursorEvent=e;if(cursorFrame)return;cursorFrame=requestAnimationFrame(()=>{cursorFrame=0;const e=cursorEvent!;let label='Coordenadas del dibujo',p:{x:number;y:number;z?:number}|undefined;
  if(bim){label='Geometría BIM importada';p=bim.cursorPoint(e.clientX,e.clientY);}else if(selectedSheet&&paperView){label='Papel ('+selectedSheet.units+') · X / Y';const r=paperView.canvas.getBoundingClientRect();p=paperView.paperPoint(e.clientX-r.left,e.clientY-r.top);}else if(is3D&&view3D){label='Punto sobre superficie · coordenadas del dibujo';if(!e.buttons)p=view3D.cursorPoint(e.clientX,e.clientY);}else if(active){const r=viewer.canvas.getBoundingClientRect();p={...drawingPoint(viewer.renderer.screenToWorld({x:e.clientX-r.left,y:e.clientY-r.top}),documentModel),z:workElevation};}
