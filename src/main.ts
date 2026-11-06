@@ -82,6 +82,7 @@ const viewer = new CadViewer({
   onViewChange(event) { if(bim||selectedSheet||is3D)return; const zoom = Math.round(zoomReferenceScale ? event.view.scale / zoomReferenceScale * 100 : event.zoomPercent); el('coordinates').textContent = `ZOOM ${zoom}%  •  LOCAL`; el('zoom-label').textContent = `${zoom}%`; tools?.redraw(); }
 });
 
+function currentCad3D():View3D|undefined{return view3D;}
 function worldShapes(doc:CadDocument){return shapesFromDocument(doc,{world3D:true}).map(s=>({...s,color:s.entity?resolveCadColor({...s.entity,layer:s.layer},doc):undefined}));}
 function updateWireInfo(){const z=view3D?.heightSummary,fmt=(n:number)=>n.toLocaleString('es-PE',{maximumFractionDigits:3});el('wire-info').textContent=z?`Alturas Z: ${fmt(z.min)} a ${fmt(z.max)} · ${z.atZero} trazos en Z=0 · unidades del archivo · GPU`:'Sin geometría 3D compatible';}
 function setView3D(enabled: boolean,refresh=true) {
@@ -235,7 +236,7 @@ async function openBim(file:File,companions:File[]){
     const {BimViewer}=await import('./bim-viewer');if(signal.aborted)throw new DOMException('Cancelado','AbortError');
     candidate=new BimViewer(host);const result=await candidate.load(file,companions,signal,message=>el('progress-text').textContent=message);
     closeBim();view3D?.destroy();view3D=undefined;is3D=false;bim=candidate;bimHost=host;viewer.clear();documentModel=undefined;originalFile=undefined;active=false;sourceStyleDirty=false;tools?.reset(true);host.style.visibility='';el('viewer-bim').hidden=false;document.querySelector('.shell')!.classList.add('bim-mode');
-    view3D?.setVisible(false);el('wire-info').hidden=true;el('viewer').hidden=true;el('viewer-paper').hidden=true;el('viewer-3d').hidden=true;el('empty').hidden=true;el('paper-info').hidden=true;el('drawing-region').hidden=true;el('layout-tabs').hidden=true;
+    el('wire-info').hidden=true;el('viewer').hidden=true;el('viewer-paper').hidden=true;el('viewer-3d').hidden=true;el('empty').hidden=true;el('paper-info').hidden=true;el('drawing-region').hidden=true;el('layout-tabs').hidden=true;
     document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command').forEach(n=>n.hidden=true);el('viewport').dataset.view3d='true';
     document.querySelector('.viewer-title span')!.textContent='Modelo 3D · Elementos y propiedades';el('tab').textContent=file.name;el('mode-badge').textContent='MODELO BIM · 3D';el('view-label').textContent=result.format+' · 3D';el('view-hint').textContent='Arrastrar: girar · Botón derecho: desplazar · Rueda: zoom';el('zoom-label').textContent='3D';el('coordinates').textContent='MODELO BIM · LOCAL';
     currentName=file.name;fileRevision++;el('context-name').textContent=file.name;el('status').textContent=`${result.format} · ${result.count} elementos · Procesamiento local`;
@@ -265,7 +266,7 @@ async function open(file: File,companions:File[]=[]) {
     tools?.reset(spatialFaces);
     prepareRegions();
     if(spatialFaces)setView3D(true);
-    const heights=is3D?view3D?.heightSummary:heightSummary(worldShapes(documentModel!));workElevation=heights&&Math.abs(heights.max-heights.min)<1e-7?heights.min:undefined;
+    const heights=is3D?currentCad3D()?.heightSummary:heightSummary(worldShapes(documentModel!));workElevation=heights&&Math.abs(heights.max-heights.min)<1e-7?heights.min:undefined;
     el('empty').hidden = true;
     el('filename').textContent = file.name; el('tab').textContent = file.name;
     el('filemeta').textContent = `${result.format.toUpperCase()} · ${(file.size / 1024).toLocaleString('es-PE', { maximumFractionDigits: 1 })} KB`;
