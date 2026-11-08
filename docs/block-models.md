@@ -63,3 +63,22 @@ Una sola geometría de caja compartida y un InstancedMesh representan el modelo.
 Las pruebas automáticas incluyen DM sintético 32/64 bits, ambas ordenaciones de bytes, cabeceras extendidas, subbloques, rotaciones, ausentes, filtros anidados, extremos de intervalos, configuraciones, CSV y transición de bloques a Layout CAD y GLB. La transformación se comprueba contra el ejemplo numérico publicado de CDTRAN, además de su inversa matemática.
 
 Un archivo privado se usa solo localmente y no se publica con sus datos ni capturas. No se afirma coincidencia visual con Datamine/Deswik sin una referencia del usuario. Las mediciones de la sesión aparecen en el panel Rendimiento: lectura, preparación, filtrado, recoloreado, selección y envío de render CPU. No son tiempos GPU ni FPS, y no equivalen a una comparación con un producto de escritorio.
+
+### Mediciones locales del modelo privado
+
+Prueba en Linux, AMD EPYC 9V74, Chromium 156 con SwiftShader (render por software), ventana 1500 × 1000; 241 277 registros y 82 campos. No se publica el archivo ni sus atributos. Primera medición del visor nuevo:
+
+| Operación | Tiempo CPU / pared |
+|---|---:|
+| Apertura completa, incluida carga y preparación | 7,39 s |
+| Lectura DM en worker | 749 ms |
+| Preparación de instancias e índice | 1 198 ms |
+| Filtrado y estadísticas (condición coincidente con todos) | 207 ms |
+| Recoloreado completo | 99 ms |
+| Actualización de cámara, media de 10 comandos | 0,08 ms |
+
+Se dibujaron 241 277 instancias, 2 895 324 triángulos y una llamada de dibujo. La identidad de geometría y la versión de matrices permanecieron iguales al cambiar la cámara. Los tiempos de actualización CPU no significan FPS: la rasterización por software puede ser sensiblemente más lenta. Antes de esta funcionalidad DM no se podía abrir, por lo que no existe una comparación antes/después de navegación del mismo formato. El panel permite medir otras máquinas y modelos.
+
+Segunda ejecución con selección: apertura 10,00 s; lectura 722 ms; preparación 1 410 ms; filtrado 185 ms; recoloreado 61 ms; selección media 0,22 ms en diez rayos. Sin errores JavaScript. Se conservaron las 241 277 instancias tras filtrar y restablecer. La variación de apertura entre ejecuciones muestra por qué estos datos no garantizan el mismo tiempo en otros equipos.
+
+Los nombres reconocidos IJK, ZONE, DOMAIN/DOMINIO, LITHO/LITO/LITHOLOGY, CLASS/CLASE y CATE/CATVP/CATE_S se interpretan inicialmente como categorías aun cuando estén almacenados numéricamente. Otros campos numéricos mantienen su tipo almacenado y se pueden reclasificar en el panel. La leyenda inicial prefiere campos AU/AG/CU/PB/ZN cuando existen.
