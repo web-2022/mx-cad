@@ -1,3 +1,4 @@
+import type {BlockViewer} from './block-viewer';
 import {drawingPoint} from './coordinate-space';
 import {drawAxes,topAxes} from './view-indicator';
 import {patchDxf} from './dxf-save';
@@ -24,7 +25,7 @@ const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElem
 let active = false;
 let navigation:Navigation|undefined;
 let fileRevision=0;
-let bim:BimViewer|undefined;
+let bim:BimViewer|BlockViewer|undefined;
 let bimHost:HTMLElement|undefined;
 let is3D = false;let modelSpatialFaces=false;let sourceStyleDirty=false;
 let view3D: View3D | undefined;
@@ -231,24 +232,25 @@ async function openBim(file:File,companions:File[]){
   if(!file.size){notice('El archivo está vacío.',true);return;}
   controller=new AbortController();const signal=controller.signal;controls();el('busy').hidden=false;el('notice').hidden=true;el('progress-text').textContent='Abriendo modelo 3D…';
   const host=document.createElement('div');host.className='bim-surface';host.style.visibility='hidden';el('viewer-bim').append(host);
-  let candidate:BimViewer|undefined;
+  let candidate:BimViewer|BlockViewer|undefined;
   try{
-    const {BimViewer}=await import('./bim-viewer');if(signal.aborted)throw new DOMException('Cancelado','AbortError');
-    candidate=new BimViewer(host);const result=await candidate.load(file,companions,signal,message=>el('progress-text').textContent=message);
+    const blockFile=/\.(dm|dmx|csv|txt|tsv)$/i.test(file.name);
+    if(blockFile){const {BlockViewer}=await import('./block-viewer');candidate=new BlockViewer(host);}else{const {BimViewer}=await import('./bim-viewer');candidate=new BimViewer(host);}
+    if(signal.aborted)throw new DOMException('Cancelado','AbortError');const result=await candidate.load(file,companions,signal,message=>el('progress-text').textContent=message);
     closeBim();view3D?.destroy();view3D=undefined;is3D=false;bim=candidate;bimHost=host;viewer.clear();documentModel=undefined;originalFile=undefined;active=false;sourceStyleDirty=false;tools?.reset(true);host.style.visibility='';el('viewer-bim').hidden=false;document.querySelector('.shell')!.classList.add('bim-mode');
     el('wire-info').hidden=true;el('viewer').hidden=true;el('viewer-paper').hidden=true;el('viewer-3d').hidden=true;el('empty').hidden=true;el('paper-info').hidden=true;el('drawing-region').hidden=true;el('layout-tabs').hidden=true;
     document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command').forEach(n=>n.hidden=true);el('viewport').dataset.view3d='true';
     document.querySelector('.viewer-title span')!.textContent='Modelo 3D · Elementos y propiedades';el('tab').textContent=file.name;el('mode-badge').textContent='MODELO BIM · 3D';el('view-label').textContent=result.format+' · 3D';el('view-hint').textContent='Arrastrar: girar · Botón derecho: desplazar · Rueda: zoom';el('zoom-label').textContent='3D';el('coordinates').textContent='MODELO BIM · LOCAL';
     currentName=file.name;fileRevision++;el('context-name').textContent=file.name;el('status').textContent=`${result.format} · ${result.count} elementos · Procesamiento local`;
     candidate.background(document.querySelector('.shell')!.classList.contains('light-view'));requestAnimationFrame(()=>bim?.fit());
-    notice('Modelo local. Selecciona elementos para ver sus propiedades básicas. NWD/NWC/NWF requieren conversión previa a IFC o glTF/GLB.');
+    if(blockFile){el('mode-badge').textContent='MODELO DE BLOQUES · LOCAL';document.querySelector('.viewer-title span')!.textContent='Bloques · Filtros, leyendas y propiedades';}else notice('Modelo local. Selecciona elementos para ver sus propiedades básicas. NWD/NWC/NWF requieren conversión previa a IFC o glTF/GLB.');
   }catch(error){candidate?.destroy();host.remove();notice(signal.aborted?'Apertura cancelada.':`No se pudo abrir el modelo. ${error instanceof Error?error.message:String(error)}`,!signal.aborted);}
   finally{controller=undefined;el('busy').hidden=true;controls();}
 }
 async function open(file: File,companions:File[]=[]) {
   if (controller) return;
   if(/\.(nwd|nwc|nwf)$/i.test(file.name)){notice('NWD/NWC/NWF no se abren directamente. Convierte el modelo previamente a IFC o GLB/glTF.',true);return;}
-  if(/\.(ifc|glb|gltf)$/i.test(file.name)){await openBim(file,companions);return;}
+  if(/\.(ifc|glb|gltf|dm|dmx|csv|txt|tsv)$/i.test(file.name)){await openBim(file,companions);return;}
   if (!/\.(dwg|dxf)$/i.test(file.name)) { notice('Selecciona un archivo DWG, DXF, IFC, GLB o glTF.', true); return; }
   if (!file.size) { notice('El archivo está vacío. Selecciona otro plano.', true); return; }
   controller = new AbortController(); controls(); el('busy').hidden = false; el('notice').hidden = true;
@@ -282,7 +284,7 @@ async function open(file: File,companions:File[]=[]) {
 const input = el<HTMLInputElement>('file-input');
 const selectFile = () => { if (!controller) input.click(); };
 el('open').onclick = selectFile;
-function openFiles(files:File[]){const models=files.filter(f=>/\.(dwg|dxf|ifc|glb|gltf|nwd|nwc|nwf)$/i.test(f.name));if(models.length!==1){notice('Selecciona un solo modelo y, si es glTF, sus archivos .bin y texturas.',true);return;}void open(models[0],files);}
+function openFiles(files:File[]){const models=files.filter(f=>/\.(dwg|dxf|ifc|glb|gltf|nwd|nwc|nwf|dm|dmx|csv|txt|tsv)$/i.test(f.name));if(models.length!==1){notice('Selecciona un solo modelo y, si es glTF, sus archivos .bin y texturas.',true);return;}void open(models[0],files);}
 input.onchange = () => { const files=Array.from(input.files??[]);input.value='';if(files.length)openFiles(files); };
 el('cancel').onclick = () => controller?.abort();
 el('plus').onclick=()=>navigation?.change(()=>navigationAdapter().zoom(1.25));el('minus').onclick=()=>navigation?.change(()=>navigationAdapter().zoom(.8));el('fit').onclick=()=>navigation?.change(()=>fitDrawing());
@@ -347,6 +349,7 @@ el<HTMLInputElement>('reference-input').onchange=async e=>{
 };
 el('export').onclick = async () => {
   try {
+    if(bim&&'png'in bim){bim.png(true);return;}
     if(selectedSheet)paperView?.draw();else if(is3D)view3D?.draw();bim?.render();
     const canvas = bim ? bim.canvas : selectedSheet ? paperView!.canvas : is3D ? view3D!.canvas : await tools!.composite(await viewer.captureCanvas());
     const link = document.createElement('a'); link.href = canvas.toDataURL('image/png'); link.download = currentName.replace(/\.(dwg|dxf|ifc|glb|gltf)$/i, '') + (selectedSheet?'_'+selectedSheet.name.replace(/[^a-z0-9_-]/gi,'_'):'') + '.png'; document.body.append(link); link.click(); link.remove();
@@ -385,7 +388,7 @@ if(location.hostname==='127.0.0.1'&&new URLSearchParams(location.search).get('be
     zoom:(f:number)=>selectedSheet?paperView!.zoom(f):viewer.renderer.zoom(f),
     pan:(dx:number,dy:number)=>{if(selectedSheet){const v=(paperView as any).view;v.centerX-=dx/v.scale;v.centerY+=dy/v.scale;paperView!.draw();}else viewer.renderer.panByScreenDelta(dx,dy);},
     sheet:(i:number)=>selectSpace(sheetsOf(documentModel)[i].id),
-    cad3D:()=>view3D,document:()=>documentModel,
+    cad3D:()=>view3D,blocks:()=>bim&&'metrics'in bim?bim:undefined,document:()=>documentModel,
     canvas:()=>selectedSheet?paperView!.canvas:viewer.canvas
   };
 }
@@ -412,7 +415,7 @@ viewport.addEventListener('mx:selectshape',e=>tools?.selectExternal((e as Custom
 viewport.addEventListener('mx:entityedit',event=>{if(is3D||selectedSheet)sourceStyleDirty=true;if(selectedSheet&&documentModel)paperView?.setSheet(documentModel,selectedSheet,false);if(is3D&&documentModel)view3D?.updateEntity((event as CustomEvent).detail?.entity);});
 drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),topAxes);
 viewport.addEventListener('pointermove',e=>{cursorEvent=e;if(cursorFrame)return;cursorFrame=requestAnimationFrame(()=>{cursorFrame=0;const e=cursorEvent!;let label='Coordenadas del dibujo',p:{x:number;y:number;z?:number}|undefined;
- if(bim){label='Geometría BIM importada';p=bim.cursorPoint(e.clientX,e.clientY);}else if(selectedSheet&&paperView){label='Papel ('+selectedSheet.units+') · X / Y';const r=paperView.canvas.getBoundingClientRect();p=paperView.paperPoint(e.clientX-r.left,e.clientY-r.top);}else if(is3D&&view3D){label='Punto sobre superficie · coordenadas del dibujo';if(!e.buttons)p=view3D.cursorPoint(e.clientX,e.clientY);}else if(active){const r=viewer.canvas.getBoundingClientRect();p={...drawingPoint(viewer.renderer.screenToWorld({x:e.clientX-r.left,y:e.clientY-r.top}),documentModel),z:workElevation};}
+ if(bim){label=bim&&'metrics'in bim?'Modelo de bloques · coordenadas del dibujo':'Geometría BIM importada';p=bim.cursorPoint(e.clientX,e.clientY);}else if(selectedSheet&&paperView){label='Papel ('+selectedSheet.units+') · X / Y';const r=paperView.canvas.getBoundingClientRect();p=paperView.paperPoint(e.clientX-r.left,e.clientY-r.top);}else if(is3D&&view3D){label='Punto sobre superficie · coordenadas del dibujo';if(!e.buttons)p=view3D.cursorPoint(e.clientX,e.clientY);}else if(active){const r=viewer.canvas.getBoundingClientRect();p={...drawingPoint(viewer.renderer.screenToWorld({x:e.clientX-r.left,y:e.clientY-r.top}),documentModel),z:workElevation};}
  const f=(n:number|undefined)=>n===undefined?'—':coordinateFormatter.format(n);el('cursor-coordinates').textContent=selectedSheet?`${label}: ${f(p?.x)} / ${f(p?.y)} · Elevación: —`:`${label} · Norte: ${f(p?.y)} | Este: ${f(p?.x)} | Elevación: ${f(p?.z)} · ${bim?'unidades de la geometría importada':el('prop-units').textContent}`;
  });});
 viewport.addEventListener('pointerleave',()=>{if(cursorFrame)cancelAnimationFrame(cursorFrame);cursorFrame=0;el('cursor-coordinates').textContent='Coordenadas del dibujo · Norte: — | Este: — | Elevación: —';});

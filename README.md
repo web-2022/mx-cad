@@ -92,3 +92,8 @@ La vista alámbrica aplica la elevación de polilíneas 2D y la orientación OCS
 ## Superficies CAD 3D
 
 La vista 3D renderiza caras compatibles con WebGL2 y permite elegir sombreado, aristas, alámbrico, líneas ocultas o transparencia desde Propiedades → Representación 3D. El botón Aspecto abre estos controles. Consulta [capacidades, uso, límites y mediciones con stopes.dxf](docs/cad-gpu-surfaces.md). El guardado DWG editado y la teselación completa de ACIS/objetos propietarios siguen sin estar disponibles.
+
+
+## Modelos de bloques Datamine
+
+Lectura local de DM heredado compatible, bloques GPU con dimensiones reales, filtros AND/OR, leyendas editables/reutilizables, cortes, selección y exportación CSV/JSON/PNG. CSV/texto tiene asistente y se distingue del formato nativo. Consulta [guía, formatos y limitaciones](docs/block-models.md). DMX y variantes no verificadas no se anuncian como compatibles.
