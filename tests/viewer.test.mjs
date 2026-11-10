@@ -48,9 +48,10 @@ test('DXF local: abrir, capas, zoom, PNG y archivo inválido', { timeout: 90000 
     await mkdir('test-results', { recursive: true });
     await unlink('test-results/ejemplo.png').catch(error => { if (error.code !== 'ENOENT') throw error; });
     await app.evaluate(({ session }, savePath) => {
-      session.defaultSession.on('will-download', (_event, item) => item.setSavePath(savePath));
+      globalThis.mxPngDownloadState='pending';session.defaultSession.on('will-download', (_event, item) => {item.setSavePath(savePath);item.once('done',(_event,state)=>globalThis.mxPngDownloadState=state);});
     }, path.resolve('test-results/ejemplo.png'));
     await page.locator('#export').click();
+    await expect.poll(()=>app.evaluate(()=>globalThis.mxPngDownloadState)).toBe('completed');
     await expect.poll(async () => { try { await access('test-results/ejemplo.png'); return true; } catch { return false; } }).toBe(true);
     const png = await readFile('test-results/ejemplo.png');
     assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
