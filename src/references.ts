@@ -16,7 +16,7 @@ export function prepareReferences(doc:CadDocument){
     if(e.kind==='text'||['TEXT','MTEXT','ATTRIB','ATTDEF'].includes(e.type)){
       const r=record(e.raw),name=String(e.textStyleName??e.styleName??r.styleName??r.style??'STANDARD');
       const style=styles.find(s=>String(s.name).toLowerCase()===name.toLowerCase()||handle(s.handle)===handle(name));
-      if(style){e.fontFile=style.fontFile;e.fontFamily=style.loadedFamily;}
+      if(style){e.fontFile=style.fontFile;e.fontFamily=style.loadedFamily;e.fontWidthFactor=Number(style.widthFactor)>0?Number(style.widthFactor):1;}
     }
   }
 }
@@ -29,6 +29,7 @@ export function fidelityWarnings(doc:CadDocument):string[]{
     if(e.fontFile&&!loaded.includes(basename(String(e.fontFile))))out.add(`Falta fuente: ${basename(String(e.fontFile))}. El texto usa una fuente de sustitución.`);
     if(e.type==='SPLINE')out.add('Aproximado: SPLINE se muestra mediante su polígono de control.');
     if(e.type==='MTEXT')out.add('Aproximado: MTEXT conserva texto y orientación; el formato por fragmentos puede variar.');
+    if(['ACAD_TABLE','TABLE'].includes(e.type)&&e.kind!=='insert')out.add('No compatible: tabla CAD sin bloque gráfico o posición recuperables; sus celdas pueden faltar.');
     if(e.type==='DIMENSION'&&e.kind!=='insert')out.add('No compatible: cota sin bloque gráfico recuperable; no se reconstruye su estilo automáticamente.');
     if(['3DSOLID','ACAD_PROXY_ENTITY','PROXY_ENTITY','OLE2FRAME','WIPEOUT'].includes(e.type))out.add(`No compatible: ${e.type}; la representación del plano puede ser parcial.`);
     if(e.type==='IMAGE'&&record(e).clipping)out.add('Aproximado: el recorte y los ajustes de brillo de imágenes pueden diferir.');

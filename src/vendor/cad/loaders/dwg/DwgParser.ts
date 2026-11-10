@@ -1,3 +1,4 @@
+import {enrichDwgViewports} from '../../../../dwg-viewport-data';
 import {missingNativeMeshes,recoverDwgMeshes} from '../../../../dwg-mesh-recovery';
 import { completeDwgDocument } from '../../../../dwg-spaces';
 import { addBlock, addLayer, addLineType, createCadDocument, normalizeCadDataValue, normalizeCadEntity, numberOrUndefined, pointFromUnknown, stringOrUndefined } from '../../core/entity.js';
@@ -47,6 +48,7 @@ export async function parseDwgBytes(bytes: Uint8Array, options: ParseDwgBytesOpt
   const missingMeshes=missingNativeMeshes(lib.instance,dwg,lib.module.Dwg_Object_Type);let recoveredMeshBytes:Uint8Array|undefined;if(missingMeshes.length&&typeof lib.instance.dwg_write_dxf==='function'){try{const out=lib.instance.dwg_write_dxf(fileContent);if(out)recoveredMeshBytes=new Uint8Array(out);}catch{/* Recovery reports a warning below. */}}
   const rawDb = typeof lib.instance.convert === 'function' ? lib.instance.convert(dwg) : dwg;
   enrichLayoutPlotSettings(rawDb, lib.instance, dwg, lib.module.Dwg_Object_Type);
+  enrichDwgViewports(rawDb,lib.instance,dwg,lib.module.Dwg_Object_Type);
   enrichDwgBusinessObjects(rawDb, extractDwgBusinessObjects(lib.instance, dwg, lib.module.Dwg_Object_Type));
   try {
     if (typeof lib.instance.dwg_free === 'function') lib.instance.dwg_free(dwg);
@@ -990,7 +992,7 @@ function enrichLayoutPlotSettings(rawDb: unknown, instance: any, dwg: any, types
     const layout=byHandle.get(String(id).toUpperCase());if(!layout)continue;
     const offset=instance.dwg_dynapi_entity_field_offset(item,'plotsettings');
     if(!Number.isFinite(offset)||offset<0)continue;
-    const get=(field:string)=>{try{return instance.dwg_dynapi_subclass_data(item+offset,'PLOTSETTINGS',field);}catch{return undefined;}};
+    const get=(field:string)=>{try{return instance.dwg_dynapi_subclass_data(item+offset,'Dwg_Object_PLOTSETTINGS',field);}catch{return undefined;}};
     const left=Number(get('left_margin')??0),bottom=Number(get('bottom_margin')??0);
     Object.assign(layout,{paperWidth:get('paper_width'),paperHeight:get('paper_height'),paperUnits:get('plot_paper_unit'),plotRotation:get('plot_rotation_mode'),paperOrigin:{x:-left,y:-bottom},plotStyleSheet:get('stylesheet')});
   }}catch{/* Missing optional native fields leave a visible paper-size warning. */}

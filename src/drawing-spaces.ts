@@ -3,7 +3,7 @@ import type { CadDocument, CadEntity, CadPoint2D } from './vendor/cad/index';
 export interface PaperViewport {
   id: string; center: CadPoint2D; width: number; height: number;
   viewCenter: CadPoint2D; target: CadPoint2D; viewHeight: number; twist: number;
-  frozenLayers: string[]; clip?: CadPoint2D[]; warning?: string;
+  frozenLayers: string[]; clip?: CadPoint2D[]; clipCircle?: {center:CadPoint2D;radius:number}; warning?: string;
 }
 export interface DrawingSheet {
   id: string; name: string; order: number; blockHandle?: string;
@@ -31,12 +31,13 @@ export function viewportFromEntity(e: CadEntity, entities: CadEntity[], doc: Cad
   const names=Object.values(doc.layers).filter(l=>frozen.includes(handle(record(l.raw).handle))).map(l=>l.name);
   const clipHandle=handle(r.clippingBoundaryId??r.clippingBoundaryHandle);
   const boundary=clipHandle?entities.find(x=>handle(x.handle)===clipHandle):undefined;
+  const clipCircle=boundary?.type==='CIRCLE'&&boundary.center&&Number(boundary.radius)>0?{center:boundary.center,radius:Number(boundary.radius)}:undefined;
   const flags=Number(r.statusBitFlags??0);
   const nonRect=!!clipHandle||!!(flags&65536);
   const vertices=boundary?.vertices;
   const straight=vertices?.length&&vertices.length>=3&&!vertices.some(v=>Math.abs(v.bulge??0)>1e-10);
-  return {id:String(e.handle??id??''),center,width,height,viewHeight,viewCenter:point(r.displayCenter??r.viewCenter)??{x:0,y:0},target:point(r.targetPoint??r.viewTarget)??{x:0,y:0},twist:Number(r.viewTwistAngle??r.twistAngle??0),frozenLayers:[...names,...frozen],clip:straight?vertices:undefined,
-    warning:perspective||tilted?'Viewport en perspectiva o con dirección 3D: no se representa en la hoja.':nonRect&&!straight?'Recorte no rectangular no compatible: no se representa el viewport.':undefined};
+  return {id:String(e.handle??id??''),center,width,height,viewHeight,viewCenter:point(r.displayCenter??r.viewCenter)??{x:0,y:0},target:point(r.targetPoint??r.viewTarget)??{x:0,y:0},twist:Number(r.viewTwistAngle??r.twistAngle??0),frozenLayers:[...names,...frozen],clip:straight?vertices:undefined,clipCircle,
+    warning:perspective||tilted?'Viewport en perspectiva o con dirección 3D: no se representa en la hoja.':nonRect&&!straight&&!clipCircle?'Recorte no rectangular no compatible: no se representa el viewport.':undefined};
 }
 
 // Group by explicit layout name or owner block record, never by proximity.
@@ -87,5 +88,5 @@ export function separateDrawingSpaces(doc: CadDocument, layouts: Record<string, 
 
 export function viewportScene(v: PaperViewport) {
   const c=Math.cos(v.twist),s=Math.sin(v.twist);
-  return {a:c,b:-s,c:s,d:c,e:-c*v.target.x-s*v.target.y,f:s*v.target.x-c*v.target.y};
+  return {a:c,b:s,c:-s,d:c,e:-c*v.target.x+s*v.target.y,f:-s*v.target.x-c*v.target.y};
 }

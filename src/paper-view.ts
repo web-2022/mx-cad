@@ -15,6 +15,8 @@ export class PaperView {
   private drag?:{id:number;x:number;y:number};
   private rendering=false;
   private frame=0;
+  private interactionFrame=false;private settle=0;private snapshot?:{canvas:HTMLCanvasElement;view:{centerX:number;centerY:number;scale:number}};
+  readonly metrics={fullDraws:0,previewDraws:0};
   private cache=new Map<string,{paper:CadDocument;views:Map<string,CadDocument>}>();
   private scratchSize='';
   private mode='pan';private selected?:Shape;private pickShapes:Shape[]=[];private pickIndex=new ShapeIndex([]);private clickStart?:{x:number;y:number};
@@ -25,9 +27,9 @@ export class PaperView {
     this.scratch.style.cssText='position:fixed;left:-100000px;top:0;visibility:hidden;pointer-events:none';document.body.append(this.scratch);
     this.renderer=new CadCanvasRenderer(this.scratch,{background:'#ffffff',transparentBackground:true,foreground:'#111111',contrastMode:'adaptive',showPageBounds:false,showUnsupportedMarkers:false,shxGlyphResolver:resolver});
     this.renderer.onStats=()=>{if(!this.rendering)this.queueDraw();};
-    this.canvas.onpointerdown=e=>{this.clickStart={x:e.clientX,y:e.clientY};if(this.mode==='select'&&e.button===0)return;if(e.button!==0&&e.button!==1)return;this.drag={id:e.pointerId,x:e.clientX,y:e.clientY};this.canvas.setPointerCapture(e.pointerId);};
-    this.canvas.onpointermove=e=>{const d=this.drag;if(!d||d.id!==e.pointerId)return;this.view.centerX-=(e.clientX-d.x)/this.view.scale;this.view.centerY+=(e.clientY-d.y)/this.view.scale;d.x=e.clientX;d.y=e.clientY;this.queueDraw();};
-    this.canvas.onpointerup=e=>{if(e.button===0&&this.mode==='select'&&this.clickStart&&Math.hypot(e.clientX-this.clickStart.x,e.clientY-this.clickStart.y)<4){const r=this.canvas.getBoundingClientRect(),p=this.paperPoint(e.clientX-r.left,e.clientY-r.top);let best=8/this.view.scale,hit:Shape|undefined;for(const s of this.pickIndex.query(p.x,p.y,best)){for(let i=0;i<s.points.length;i++){const a=s.points[i],b=s.points[(i+1)%s.points.length];if(!s.closed&&i===s.points.length-1&&s.points.length>1)continue;const d=distance(p,closest(p,a,b));if(d<best){best=d;hit=s;}}}this.selected=hit;this.host.parentElement?.dispatchEvent(new CustomEvent('mx:selectshape',{detail:hit}));this.draw();}this.clickStart=undefined;this.drag=undefined;};this.canvas.onpointercancel=this.canvas.onlostpointercapture=()=>{this.clickStart=undefined;this.drag=undefined;};
+    this.canvas.onpointerdown=e=>{this.clickStart={x:e.clientX,y:e.clientY};if(this.mode==='select'&&e.button===0)return;if(e.button!==0&&e.button!==1)return;this.beginInteraction();this.drag={id:e.pointerId,x:e.clientX,y:e.clientY};this.canvas.setPointerCapture(e.pointerId);};
+    this.canvas.onpointermove=e=>{const d=this.drag;if(!d||d.id!==e.pointerId)return;this.view.centerX-=(e.clientX-d.x)/this.view.scale;this.view.centerY+=(e.clientY-d.y)/this.view.scale;d.x=e.clientX;d.y=e.clientY;this.queueDraw(true);};
+    this.canvas.onpointerup=e=>{if(e.button===0&&this.mode==='select'&&this.clickStart&&Math.hypot(e.clientX-this.clickStart.x,e.clientY-this.clickStart.y)<4){const r=this.canvas.getBoundingClientRect(),p=this.paperPoint(e.clientX-r.left,e.clientY-r.top);let best=8/this.view.scale,hit:Shape|undefined;for(const s of this.pickIndex.query(p.x,p.y,best)){for(let i=0;i<s.points.length;i++){const a=s.points[i],b=s.points[(i+1)%s.points.length];if(!s.closed&&i===s.points.length-1&&s.points.length>1)continue;const d=distance(p,closest(p,a,b));if(d<best){best=d;hit=s;}}}this.selected=hit;this.host.parentElement?.dispatchEvent(new CustomEvent('mx:selectshape',{detail:hit}));this.draw();}this.clickStart=undefined;const dragged=!!this.drag;this.drag=undefined;if(dragged)this.draw();};this.canvas.onpointercancel=this.canvas.onlostpointercapture=()=>{this.clickStart=undefined;const dragged=!!this.drag;this.drag=undefined;if(dragged)this.draw();};
     this.canvas.addEventListener('wheel',e=>{e.preventDefault();this.zoom(Math.exp(-Math.max(-200,Math.min(200,e.deltaY))*.002),true);},{passive:false});
     this.observer=new ResizeObserver(()=>this.queueDraw());this.observer.observe(host);
   }
@@ -40,8 +42,15 @@ export class PaperView {
     this.view={centerX:(b.minX+b.maxX)/2,centerY:(b.minY+b.maxY)/2,scale:Math.min(this.host.clientWidth/Math.max(b.maxX-b.minX,1e-6),this.host.clientHeight/Math.max(b.maxY-b.minY,1e-6))*.88};
     this.referenceScale=this.view.scale;this.draw();
   }
-  zoom(factor:number,deferred=false){this.view.scale=Math.max(1e-8,Math.min(1e8,this.view.scale*factor));if(deferred)this.queueDraw();else this.draw();}
-  private queueDraw(){if(!this.frame)this.frame=requestAnimationFrame(()=>{this.frame=0;this.draw();});}
+  zoom(factor:number,deferred=false){if(deferred)this.beginInteraction();this.view.scale=Math.max(1e-8,Math.min(1e8,this.view.scale*factor));if(deferred)this.queueDraw(true);else this.draw();}
+  private beginInteraction(){if(this.snapshot||!this.canvas.width)return;const canvas=document.createElement('canvas');canvas.width=this.canvas.width;canvas.height=this.canvas.height;canvas.getContext('2d')!.drawImage(this.canvas,0,0);this.snapshot={canvas,view:{...this.view}};}
+  private preview(){
+    const old=this.snapshot;if(!old){this.draw();return;}const width=this.host.clientWidth,height=this.host.clientHeight,dpr=this.canvas.width/Math.max(width,1),ctx=this.canvas.getContext('2d')!,ratio=this.view.scale/old.view.scale;
+    ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle=this.sheet?.width&&this.sheet?.height?'#626a77':'#fff';ctx.fillRect(0,0,width,height);
+    const x=width/2*(1-ratio)+(old.view.centerX-this.view.centerX)*this.view.scale,y=height/2*(1-ratio)-(old.view.centerY-this.view.centerY)*this.view.scale;
+    ctx.drawImage(old.canvas,x,y,width*ratio,height*ratio);this.metrics.previewDraws++;this.onView?.(Math.round(this.view.scale/this.referenceScale*100));
+  }
+  private queueDraw(interaction=false){this.interactionFrame=interaction;if(interaction){clearTimeout(this.settle);this.settle=window.setTimeout(()=>{this.settle=0;this.draw();},180);}if(!this.frame)this.frame=requestAnimationFrame(()=>{this.frame=0;if(this.interactionFrame)this.preview();else this.draw();});}
   private screen(p:{x:number;y:number}){return{x:this.host.clientWidth/2+(p.x-this.view.centerX)*this.view.scale,y:this.host.clientHeight/2-(p.y-this.view.centerY)*this.view.scale};}
   setInteractionMode(mode:string){this.mode=mode;}
   escape(){this.selected=undefined;this.drag=undefined;this.clickStart=undefined;this.draw();}
@@ -56,6 +65,7 @@ export class PaperView {
     if(this.cache.size>=2)this.cache.delete(this.cache.keys().next().value!);this.cache.set(s.id,entry);return entry;
   }
   draw(){
+    clearTimeout(this.settle);this.settle=0;this.snapshot=undefined;this.interactionFrame=false;this.metrics.fullDraws++;
     if(this.frame){cancelAnimationFrame(this.frame);this.frame=0;}
     const doc=this.doc,s=this.sheet,width=this.host.clientWidth,height=this.host.clientHeight;if(!doc||!s||!width||!height)return;
     this.rendering=true;
@@ -73,14 +83,14 @@ export class PaperView {
         const source=s.entities.find(e=>String(e.handle??e.viewportId??'')===v.id),layer=doc.layers[source?.layer??'0'];
         if(source?.isVisible===false||layer?.isVisible===false||layer?.isFrozen)continue;
         const c=this.screen(v.center),w=v.width*this.view.scale,h=v.height*this.view.scale;
-        if(!v.clip&&(c.x+w/2<0||c.x-w/2>width||c.y+h/2<0||c.y-h/2>height))continue;
+        if(!v.clip&&!v.clipCircle&&(c.x+w/2<0||c.x-w/2>width||c.y+h/2<0||c.y-h/2>height))continue;
         if(!prepared.views.has(v.id)){
           const layers=Object.fromEntries(Object.entries(doc.layers).map(([key,l])=>[key,{...l,isVisible:l.isVisible!==false&&!v.frozenLayers.includes(l.name)&&!v.frozenLayers.includes(String((l.raw as any)?.handle??'').toUpperCase())}]));
           const budget=Math.max(1,Math.min(12,Math.floor(100000/Math.max(1,doc.entities.length))));if(prepared.views.size>=budget)prepared.views.delete(prepared.views.keys().next().value!);
           prepared.views.set(v.id,createCadSceneDocument({...doc,entities:doc.entities,layers,pages:undefined,savedView:{source:'vport',twistAngle:0,sceneTransformApplied:true,sceneTransform:viewportScene(v)},metadata:{...doc.metadata,sceneTransformApplied:false}}));
         }
         ctx.save();ctx.beginPath();
-        if(v.clip){v.clip.forEach((p,i)=>{const q=this.screen(p);if(i)ctx.lineTo(q.x,q.y);else ctx.moveTo(q.x,q.y);});ctx.closePath();}else ctx.rect(c.x-w/2,c.y-h/2,w,h);
+        if(v.clipCircle){const q=this.screen(v.clipCircle.center);ctx.arc(q.x,q.y,v.clipCircle.radius*this.view.scale,0,Math.PI*2);}else if(v.clip){v.clip.forEach((p,i)=>{const q=this.screen(p);if(i)ctx.lineTo(q.x,q.y);else ctx.moveTo(q.x,q.y);});ctx.closePath();}else ctx.rect(c.x-w/2,c.y-h/2,w,h);
         ctx.clip();
         this.renderer.setDocument(prepared.views.get(v.id)!,{centerX:v.viewCenter.x,centerY:v.viewCenter.y,scale:this.view.scale*v.height/v.viewHeight});
         ctx.drawImage(this.scratch,c.x-width/2,c.y-height/2,width,height);ctx.restore();
@@ -91,5 +101,5 @@ export class PaperView {
       this.onView?.(Math.round(this.view.scale/this.referenceScale*100));
     }finally{this.rendering=false;}
   }
-  destroy(){this.observer.disconnect();if(this.frame)cancelAnimationFrame(this.frame);this.renderer.destroy();this.scratch.remove();this.canvas.remove();}
+  destroy(){clearTimeout(this.settle);this.snapshot=undefined;this.observer.disconnect();if(this.frame)cancelAnimationFrame(this.frame);this.renderer.destroy();this.scratch.remove();this.canvas.remove();}
 }

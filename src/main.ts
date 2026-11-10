@@ -388,7 +388,7 @@ if(location.hostname==='127.0.0.1'&&new URLSearchParams(location.search).get('be
     zoom:(f:number)=>selectedSheet?paperView!.zoom(f):viewer.renderer.zoom(f),
     pan:(dx:number,dy:number)=>{if(selectedSheet){const v=(paperView as any).view;v.centerX-=dx/v.scale;v.centerY+=dy/v.scale;paperView!.draw();}else viewer.renderer.panByScreenDelta(dx,dy);},
     sheet:(i:number)=>selectSpace(sheetsOf(documentModel)[i].id),
-    cad3D:()=>view3D,blocks:()=>bim&&'metrics'in bim?bim:undefined,document:()=>documentModel,
+    paper:()=>paperView,cad3D:()=>view3D,blocks:()=>bim&&'metrics'in bim?bim:undefined,document:()=>documentModel,
     canvas:()=>selectedSheet?paperView!.canvas:viewer.canvas
   };
 }

@@ -562,6 +562,10 @@ export class CadCanvasRenderer {
     const rawVertices = (e.vertices ?? e.points) as CadPoint3D[] | undefined;
     const vertices=rawVertices?solidVertices(e.type,rawVertices):undefined;
     if (!Array.isArray(vertices) || vertices.length < 3) return this.markSkipped(String(e.type));
+    if(e.type==='3DFACE'){
+      this.beginStyledPath(e,false);const invisible=Number(e.flag??e.invisibleEdgeFlags??0);
+      for(let i=0;i<vertices.length;i++){if(invisible&(1<<i))continue;const a=this.worldToScreen(vertices[i]),b=this.worldToScreen(vertices[(i+1)%vertices.length]);this.ctx.moveTo(a.x,a.y);this.ctx.lineTo(b.x,b.y);}this.finishStroke();return;
+    }
     this.beginStyledPath(e, true);
     const first = this.worldToScreen(vertices[0]);
     this.ctx.moveTo(first.x, first.y);
@@ -703,7 +707,7 @@ export class CadCanvasRenderer {
     ctx.translate(s.x, s.y);
     ctx.rotate(-rotation);
     const generationFlag = Number(e.generationFlag ?? 0);
-    const xScale = Number(e.xScale ?? 1);
+    const xScale = Number(e.xScale ?? e.fontWidthFactor ?? 1);
     ctx.scale((generationFlag & 2 ? -1 : 1) * (Number.isFinite(xScale) && Math.abs(xScale) > 1e-9 ? Math.abs(xScale) : 1), generationFlag & 4 ? -1 : 1);
     const pixelHeight = Math.abs(height) * this.view.scale;
     ctx.font = `${pixelHeight}px ${typeof e.fontFamily==='string'?JSON.stringify(e.fontFamily)+',':''} ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;

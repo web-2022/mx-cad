@@ -15,7 +15,7 @@ test('inch paper and margins are converted from stored millimetres; unknown size
 });
 test('viewport scene rotates around its target, without moving unrelated sheets',()=>{
   const v={target:{x:100,y:200},twist:Math.PI/2};const m=viewportScene(v),p={x:110,y:200};
-  assert.ok(Math.abs(m.a*p.x+m.c*p.y+m.e)<1e-10);assert.ok(Math.abs(m.b*p.x+m.d*p.y+m.f+10)<1e-10);
+  assert.ok(Math.abs(m.a*p.x+m.c*p.y+m.e)<1e-10);assert.ok(Math.abs(m.b*p.x+m.d*p.y+m.f-10)<1e-10);
 });
 test('hatch preserves islands and samples curved boundaries without filling unsupported splines',()=>{
   const e={type:'HATCH',boundaryPaths:[{vertices:[{x:0,y:0,bulge:1},{x:10,y:0},{x:10,y:10}]},{vertices:[{x:3,y:3},{x:6,y:3},{x:6,y:6},{x:3,y:6}]}]};

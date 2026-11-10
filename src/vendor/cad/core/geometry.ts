@@ -125,13 +125,19 @@ export function bulgeToPolylinePoints(p1: CadPoint2D, p2: CadPoint2D, bulge = 0,
 }
 
 export function stripMTextFormatting(text: string): string {
-  return text
-    .replace(/\\P/g, '\n')
-    .replace(/\\~|\\ /g, ' ')
-    .replace(/\\[A-Za-z][^;]*;/g, '')
-    .replace(/[{}]/g, '')
-    .replace(/\\[A-Za-z]/g, '')
-    .trim();
+  let out='';
+  for(let i=0;i<text.length;i++){
+    const c=text[i];if(c==='{'||c==='}')continue;
+    if(c!=='\\'){out+=c;continue;}
+    const cmd=text[++i];if(cmd===undefined){out+='\\';break;}
+    if(cmd==='\\'||cmd==='{'||cmd==='}'){out+=cmd;continue;}
+    if(cmd==='P'){out+='\n';continue;}if(cmd==='~'){out+=' ';continue;}
+    if('LlOoKk'.includes(cmd))continue;
+    if(cmd==='U'&&text[i+1]==='+'){const hex=text.slice(i+2,i+6);if(/^[0-9a-f]{4}$/i.test(hex)){out+=String.fromCharCode(parseInt(hex,16));i+=5;continue;}}
+    if('ACcFfHQTWSp'.includes(cmd)){const end=text.indexOf(';',i+1);if(end>=0){if(cmd==='S')out+=text.slice(i+1,end).replace(/[\^#]/g,'/');i=end;continue;}}
+    out+='\\'+cmd;
+  }
+  return out.replace(/\t/g,'    ').trim();
 }
 
 export function clamp(value: number, min: number, max: number): number {
