@@ -330,7 +330,7 @@ export class CadCanvasRenderer {
     for(const e of entities){const layer=this.lookupLayer(e.layer);
       const eligible=e.type==='LINE'&&e.isVisible!==false&&layerVisible(layer)&&Number(e.opacity??1)===1&&isFinitePoint(e.startPoint)&&isFinitePoint(e.endPoint)&&!cadEntityWorldStrokeWidth(e)&&opaque(e.color)&&opaque(e.trueColor)&&opaque(layer?.color)&&!resolveCadLinePattern(e,this.document);
       if(!eligible){if(current.length)groups.push(current);current=[];last='';groups.push([e]);continue;}
-      const key=JSON.stringify([e.layer,e.colorIndex,e.color,e.trueColor,e.lineweight]);
+      const key=JSON.stringify([e.layer,e.colorIndex,e.colorNumber,e.mxInheritedAci,e.color,e.trueColor,e.lineweight]);
       if(key!==last&&current.length){groups.push(current);current=[];}last=key;current.push(e);
     }
     if(current.length)groups.push(current);return groups;
