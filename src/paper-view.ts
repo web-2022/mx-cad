@@ -60,8 +60,9 @@ export class PaperView {
   zoomWindow(box:{x:number;y:number;width:number;height:number}){const w=this.host.clientWidth,h=this.host.clientHeight;this.view.centerX+=(box.x+box.width/2-w/2)/this.view.scale;this.view.centerY-=(box.y+box.height/2-h/2)/this.view.scale;this.view.scale*=Math.min(w/box.width,h/box.height);this.draw();}
   private prepared(){
     const doc=this.doc!,s=this.sheet!;let entry=this.cache.get(s.id);if(entry)return entry;
+    const plotTable=(doc.metadata.mxPlotStyles as Record<string,unknown>|undefined)?.[String(s.plotStyleSheet??'').replace(/\\/g,'/').split('/').at(-1)!.toLowerCase()];
     const views=new Map<string,CadDocument>();
-    entry={views,paper:{...doc,entities:s.entities.filter(e=>e.type!=='VIEWPORT'),pages:undefined,savedView:undefined,metadata:{...doc.metadata,sceneTransformApplied:true}}};
+    entry={views,paper:{...doc,entities:s.entities.filter(e=>e.type!=='VIEWPORT'),pages:undefined,savedView:undefined,metadata:{...doc.metadata,mxActivePlotStyle:plotTable,sceneTransformApplied:true}}};
     if(this.cache.size>=2)this.cache.delete(this.cache.keys().next().value!);this.cache.set(s.id,entry);return entry;
   }
   draw(){
@@ -87,7 +88,7 @@ export class PaperView {
         if(!prepared.views.has(v.id)){
           const layers=Object.fromEntries(Object.entries(doc.layers).map(([key,l])=>[key,{...l,isVisible:l.isVisible!==false&&!v.frozenLayers.includes(l.name)&&!v.frozenLayers.includes(String((l.raw as any)?.handle??'').toUpperCase())}]));
           const budget=Math.max(1,Math.min(12,Math.floor(100000/Math.max(1,doc.entities.length))));if(prepared.views.size>=budget)prepared.views.delete(prepared.views.keys().next().value!);
-          prepared.views.set(v.id,createCadSceneDocument({...doc,entities:doc.entities,layers,pages:undefined,savedView:{source:'vport',twistAngle:0,sceneTransformApplied:true,sceneTransform:viewportScene(v)},metadata:{...doc.metadata,sceneTransformApplied:false}}));
+          prepared.views.set(v.id,createCadSceneDocument({...doc,entities:doc.entities,layers,pages:undefined,savedView:{source:'vport',twistAngle:0,sceneTransformApplied:true,sceneTransform:viewportScene(v)},metadata:{...doc.metadata,mxActivePlotStyle:prepared.paper.metadata.mxActivePlotStyle,sceneTransformApplied:false}}));
         }
         ctx.save();ctx.beginPath();
         if(v.clipCircle){const q=this.screen(v.clipCircle.center);ctx.arc(q.x,q.y,v.clipCircle.radius*this.view.scale,0,Math.PI*2);}else if(v.clip){v.clip.forEach((p,i)=>{const q=this.screen(p);if(i)ctx.lineTo(q.x,q.y);else ctx.moveTo(q.x,q.y);});ctx.closePath();}else ctx.rect(c.x-w/2,c.y-h/2,w,h);

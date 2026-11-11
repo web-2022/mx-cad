@@ -8,7 +8,7 @@ export interface PaperViewport {
 export interface DrawingSheet {
   id: string; name: string; order: number; blockHandle?: string;
   width?: number; height?: number; units: 'mm'|'in'|'pixels'|'unknown';
-  origin: CadPoint2D; rotation: number; entities: CadEntity[]; viewports: PaperViewport[]; warnings: string[];
+  plotStyleSheet?:string;origin: CadPoint2D; rotation: number; entities: CadEntity[]; viewports: PaperViewport[]; warnings: string[];
 }
 export const record=(value: unknown): Record<string, any> => value && typeof value==='object' ? value as Record<string, any> : {};
 export const list=(value: unknown): Record<string, any>[] => Array.isArray(value)?value.map(record):Object.values(record(value)).filter(x=>x&&typeof x==='object').map(record);
@@ -49,7 +49,7 @@ export function separateDrawingSpaces(doc: CadDocument, layouts: Record<string, 
     const factor=units===0?25.4:1;
     if(width)width/=factor;if(height)height/=factor;
     if(width&&height&&(rotation===1||rotation===3))[width,height]=[height,width];
-    return {id:handle(l.handle)||`layout-${i}`,name:String(l.layoutName??l.name??`Layout ${i+1}`),order:Number(l.tabOrder??i),blockHandle:handle(l.paperSpaceTableId??l.blockRecordHandle),width,height,units:units===0?'in':units===1?'mm':units===2?'pixels':'unknown',origin:{x:(point(l.paperOrigin)?.x??0)/factor,y:(point(l.paperOrigin)?.y??0)/factor},rotation,entities:[],viewports:[],warnings:[]};
+    return {plotStyleSheet:String(l.plotStyleSheet??''),id:handle(l.handle)||`layout-${i}`,name:String(l.layoutName??l.name??`Layout ${i+1}`),order:Number(l.tabOrder??i),blockHandle:handle(l.paperSpaceTableId??l.blockRecordHandle),width,height,units:units===0?'in':units===1?'mm':units===2?'pixels':'unknown',origin:{x:(point(l.paperOrigin)?.x??0)/factor,y:(point(l.paperOrigin)?.y??0)/factor},rotation,entities:[],viewports:[],warnings:[]};
   });
   const byName=new Map(sheets.map(s=>[s.name.toLowerCase(),s]));
   const byOwner=new Map(sheets.filter(s=>s.blockHandle).map(s=>[s.blockHandle!,s]));

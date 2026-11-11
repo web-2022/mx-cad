@@ -1,3 +1,4 @@
+import {recoverTableGraphics} from '../../../../table-recovery';
 import {enrichDwgViewports} from '../../../../dwg-viewport-data';
 import {missingNativeMeshes,recoverDwgMeshes} from '../../../../dwg-mesh-recovery';
 import { completeDwgDocument } from '../../../../dwg-spaces';
@@ -58,6 +59,7 @@ export async function parseDwgBytes(bytes: Uint8Array, options: ParseDwgBytesOpt
 
   const document = normalizeDwgDatabase(rawDb, sourceName, version, { keepRaw: Boolean(options.keepRaw) });
   await recoverDwgMeshes(document,recoveredMeshBytes,missingMeshes);
+  await recoverTableGraphics(document,bytes,options.wasmPath??'/wasm/',lib.module.Dwg_Object_Type?.DWG_TYPE_TABLE);
   const elapsedMs = performance.now() - started;
   options.onProgress?.({ phase: 'done', format: 'dwg', message: 'DWG loaded.', total: bytes.byteLength, percent: 100, elapsedMs });
   return {

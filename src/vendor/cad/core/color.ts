@@ -1,3 +1,4 @@
+import {entityPlotStyle,plotColor,effectiveAci} from '../../../plot-styles';
 import { readCadColorPolicy, type CadColorMode } from './colorPolicy.js';
 import type { CadDocument, CadEntity, CadLayer } from './types.js';
 
@@ -34,6 +35,7 @@ const BASE_ACI: Record<number, string> = {
 export type CadColorContrastMode = 'preserve' | 'adaptive';
 
 export interface ColorResolveOptions {
+  applyPlotStyle?:boolean;
   foreground?: string;
   background?: string;
   trueColorByteOrder?: 'rgb' | 'bgr';
@@ -160,7 +162,7 @@ export function resolveCadColor(entity: CadEntity, document?: CadDocument, optio
     color = resolveLayerColor(layer, options);
   }
 
-  return resolveCadRenderColor(color ?? fallback, document, options);
+  const resolved=resolveCadRenderColor(color ?? fallback, document, options),plot=options.applyPlotStyle===false?undefined:entityPlotStyle(entity,document);return plot?plotColor(resolved,plot):resolved;
 }
 
 export function resolveFillColor(entity: CadEntity, document?: CadDocument, options: ColorResolveOptions = {}): string | undefined {
@@ -172,7 +174,7 @@ export function resolveFillColor(entity: CadEntity, document?: CadDocument, opti
     color = Math.abs(n) <= 257 ? colorFromAci(n, options.foreground ?? '#ffffff', options.foreground ?? '#ffffff') : colorFromTrueColor(n, options.trueColorByteOrder ?? 'rgb');
   }
   if (!color && typeof entity.fillColorIndex === 'number') color = colorFromAci(entity.fillColorIndex, options.foreground ?? '#ffffff', options.foreground ?? '#ffffff');
-  return color ? resolveCadRenderColor(color, document, options) : undefined;
+  if(!color)return;const resolved=resolveCadRenderColor(color,document,options),plot=options.applyPlotStyle===false?undefined:entityPlotStyle(entity,document);return plot?plotColor(resolved,plot):resolved;
 }
 
 /** Applies a monochrome plot-style override without changing source entities. */
@@ -271,8 +273,8 @@ export function applyByBlockColorInheritance(entity: CadEntity, parent: CadEntit
   if((!entity.layer||entity.layer==='0')&&parent.layer)entity={...entity,layer:parent.layer};
   if(entity.lineweight===-2)entity={...entity,lineweight:parent.lineweight&&parent.lineweight>0?parent.lineweight:lookupLayer(document,parent.layer)?.lineweight};
   if (!isByBlockColor(entity)) return entity;
-  const inheritedColor = resolveCadColor(parent, document, { ...options, colorMode: 'source' });
-  const clone: CadEntity = { ...entity, color: inheritedColor, trueColor: undefined, colorIndex: undefined, colorNumber: undefined };
+  const inheritedColor = resolveCadColor(parent, document, { ...options, colorMode: 'source',applyPlotStyle:false });
+  const clone: CadEntity = { ...entity, color: inheritedColor, trueColor: undefined, colorIndex: undefined, colorNumber: undefined,mxInheritedAci:effectiveAci(parent,document) };
   return clone;
 }
 

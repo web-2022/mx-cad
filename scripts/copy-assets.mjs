@@ -12,3 +12,5 @@ await cp(join(root, 'node_modules/web-ifc/web-ifc.wasm'), join(root, 'public/ifc
 await mkdir(join(root,'public/licenses'),{recursive:true});
 await cp(join(root,'node_modules/three/LICENSE'),join(root,'public/licenses/three.txt'));
 await cp(join(root,'node_modules/web-ifc/LICENSE.md'),join(root,'public/licenses/web-ifc.txt'));
+
+await import('./table-reader-assets.mjs');

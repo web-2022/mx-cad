@@ -1,3 +1,4 @@
+import {entityPlotStyle} from '../../../plot-styles';
 import {wrapText} from '../../../text-layout';
 import {solidVertices} from '../../../solid-order';
 import { hatchBoundaries } from '../../../hatch-geometry';
@@ -446,10 +447,11 @@ export class CadCanvasRenderer {
     ctx.globalAlpha = clamp(Number(entity.opacity ?? 1), 0, 1);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    const weight=entity.lineweight&&entity.lineweight>0?entity.lineweight:this.lookupLayer(entity.layer)?.lineweight;
+    const plotWeight=entityPlotStyle(entity,this.document)?.lineweight;
+    const weight=plotWeight!==undefined?plotWeight*100:entity.lineweight&&entity.lineweight>0?entity.lineweight:this.lookupLayer(entity.layer)?.lineweight;
     const lineweightPixels = typeof weight === 'number' && weight > 0 ? (this.opts.paperScale?weight/100*this.opts.paperScale:weight/30) : 1;
     const worldWidthPixels = cadEntityWorldStrokeWidth(entity) * Math.abs(this.view.scale);
-    ctx.lineWidth = Math.max(1, Math.min(256, Math.max(lineweightPixels, Number.isFinite(worldWidthPixels) ? worldWidthPixels : 0)));
+    ctx.lineWidth = Math.max((plotWeight!==undefined && this.opts.paperScale ? 0.1 : 1), Math.min(256, Math.max(lineweightPixels, Number.isFinite(worldWidthPixels) ? worldWidthPixels : 0)));
     const linePattern = applyLinePattern ? resolveCadLinePattern(entity, this.document) : undefined;
     ctx.setLineDash(linePattern
       ? linePattern.segments.map((length) => Math.max(0.05, length * this.view.scale))

@@ -1,0 +1,8 @@
+import{readFile,writeFile,mkdir}from'node:fs/promises';import{createHash}from'node:crypto';import{fileURLToPath}from'node:url';
+const commit='4c9bf7fe2492beaad872c34ee36d810f70fd5f02',root=new URL('../public/table-reader/',import.meta.url);
+const files=[['libredwg-web.js','cdb36ec635f8ca64c96defb736c6e7f288e98e067c326d699ab19a65801474e9'],['libredwg-web.wasm','00c5055f1d73537fd3a6f096ccad7b867ae74fe6e34cf362bfb780ed57f0cfc1']];
+const digest=b=>createHash('sha256').update(b).digest('hex');await mkdir(root,{recursive:true});
+for(const[name,hash]of files){const path=new URL(name,root);let bytes;try{bytes=await readFile(path);}catch{}if(bytes&&digest(bytes)===hash)continue;const r=await fetch(`https://raw.githubusercontent.com/mlightcad/libredwg-web/${commit}/bindings/javascript/wasm/${name}`);if(!r.ok)throw Error('No se pudo obtener el lector auxiliar: '+r.status);bytes=Buffer.from(await r.arrayBuffer());if(name.endsWith('.js'))bytes=Buffer.from(bytes.toString('utf8').trimEnd()+'\n');if(digest(bytes)!==hash)throw Error('La integridad del lector auxiliar no coincide: '+name);await writeFile(path,bytes);}
+console.log('Lector auxiliar de tablas verificado: '+fileURLToPath(root));
+
+await mkdir(new URL('../public/licenses/',import.meta.url),{recursive:true});await writeFile(new URL('../public/licenses/table-reader.txt',import.meta.url),'GNU LibreDWG / mlightcad libredwg-web — GPL-3.0. Auxiliary binary pinned to '+commit+'. Complete corresponding source: https://github.com/mlightcad/libredwg-web/tree/'+commit+' . License: https://www.gnu.org/licenses/gpl-3.0.txt . Used only to read table block-reference prefixes in an isolated worker.');

@@ -1,6 +1,7 @@
+import {readPlotStyle,type PlotTable} from './plot-styles.ts';
 import type {CadDocument,CadEntity,CadViewer} from './vendor/cad/index';
-import {sheetsOf,list,record,handle} from './drawing-spaces';
-import {hatchDiagnostics} from './hatch-geometry';
+import {sheetsOf,list,record,handle} from './drawing-spaces.ts';
+import {hatchDiagnostics} from './hatch-geometry.ts';
 
 export const basename=(name:string)=>name.replace(/\\/g,'/').split('/').at(-1)!.toLowerCase();
 export function allEntities(doc:CadDocument):CadEntity[]{return [...doc.entities,...sheetsOf(doc).flatMap(s=>s.entities),...Object.values(doc.blocks).flatMap(b=>b.entities)];}
@@ -16,7 +17,7 @@ export function prepareReferences(doc:CadDocument){
     if(e.kind==='text'||['TEXT','MTEXT','ATTRIB','ATTDEF'].includes(e.type)){
       const r=record(e.raw),name=String(e.textStyleName??e.styleName??r.styleName??r.style??'STANDARD');
       const style=styles.find(s=>String(s.name).toLowerCase()===name.toLowerCase()||handle(s.handle)===handle(name));
-      if(style){e.fontFile=style.fontFile;e.fontFamily=style.loadedFamily;e.fontWidthFactor=Number(style.widthFactor)>0?Number(style.widthFactor):1;}
+      if(style){e.fontFile=style.fontFile;e.bigFontFile=style.bigFontFile;e.fontFamily=style.loadedFamily;e.fontWidthFactor=Number(style.widthFactor)>0?Number(style.widthFactor):1;}
     }
   }
 }
@@ -27,17 +28,20 @@ export function fidelityWarnings(doc:CadDocument):string[]{
     if(e.type==='HATCH')for(const message of hatchDiagnostics(e))out.add(`Aproximado: ${message}`);
     if(e.type==='IMAGE'&&!e.imageDataUrl)out.add(`Falta imagen: ${e.imageSource?basename(String(e.imageSource)):'IMAGEDEF sin ruta recuperable'}. Cárgala desde tu equipo.`);
     if(e.fontFile&&!loaded.includes(basename(String(e.fontFile))))out.add(`Falta fuente: ${basename(String(e.fontFile))}. El texto usa una fuente de sustitución.`);
+    if(e.bigFontFile&&!loaded.includes(basename(String(e.bigFontFile))))out.add('Falta fuente grande: '+basename(String(e.bigFontFile))+'. No está incrustada en el DWG.');
     if(e.type==='SPLINE')out.add('Aproximado: SPLINE se muestra mediante su polígono de control.');
     if(e.type==='MTEXT')out.add('Aproximado: MTEXT conserva texto y orientación; el formato por fragmentos puede variar.');
+    if(e.mxRecoveredTable)out.add('Tabla CAD: se utiliza el gráfico original guardado; celdas estructuradas y guardado editable no disponibles.');
     if(['ACAD_TABLE','TABLE'].includes(e.type)&&e.kind!=='insert')out.add('No compatible: tabla CAD sin bloque gráfico o posición recuperables; sus celdas pueden faltar.');
     if(e.type==='DIMENSION'&&e.kind!=='insert')out.add('No compatible: cota sin bloque gráfico recuperable; no se reconstruye su estilo automáticamente.');
-    if(['3DSOLID','ACAD_PROXY_ENTITY','PROXY_ENTITY','OLE2FRAME','WIPEOUT'].includes(e.type))out.add(`No compatible: ${e.type}; la representación del plano puede ser parcial.`);
+    if(['3DSOLID','ACAD_PROXY_ENTITY','PROXY_ENTITY','OLE2FRAME','WIPEOUT'].includes(e.type)&&!e.mxOleBitmap)out.add(`No compatible: ${e.type}; la representación del plano puede ser parcial.`);
     if(e.type==='IMAGE'&&record(e).clipping)out.add('Aproximado: el recorte y los ajustes de brillo de imágenes pueden diferir.');
   }
   for(const [name,block]of Object.entries(doc.blocks)){
     const r=record(block.raw),path=String(r.xrefPath??r.pathName??r.xrefPathName??'');
     if((path||(Number(r.flags)&12))&&!r.mxReferenceLoaded)out.add(`Falta referencia externa: ${path?basename(path):name}. Carga su DWG o DXF local.`);
   }
+  for(const sheet of sheetsOf(doc)){if(sheet.plotStyleSheet){const loaded=(doc.metadata.mxPlotStyles as Record<string,PlotTable>|undefined)?.[basename(sheet.plotStyleSheet)];if(!loaded)out.add('Falta estilo de impresión: '+basename(sheet.plotStyleSheet)+'. Carga su archivo CTB local.');else loaded.warnings.forEach(w=>out.add(w));}}
   if(sheetsOf(doc).length)out.add('Aproximado: estilos de impresión CTB/STB, escalas anotativas y overrides de color por viewport no se reproducen completamente.');
   if(entities.some(e=>e.type==='HATCH'&&e.solidFill===0))out.add('Aproximado: patrones HATCH muy densos se simplifican a la resolución de pantalla para evitar bloqueos.');
   return [...out];
@@ -45,6 +49,7 @@ export function fidelityWarnings(doc:CadDocument):string[]{
 
 export async function loadLocalReference(doc:CadDocument,file:File,viewer:CadViewer){
   const name=basename(file.name),loaded=(doc.metadata.mxLoadedReferences??=[]) as string[];
+  if(/\.(ctb|stb)$/.test(name)){const sheets=sheetsOf(doc).filter(s=>basename(s.plotStyleSheet??'')===name);if(!sheets.length)throw Error('El estilo no coincide con ninguna presentación: '+file.name);const style=await readPlotStyle(new Uint8Array(await file.arrayBuffer()),file.name);((doc.metadata.mxPlotStyles??={}) as Record<string,PlotTable>)[name]=style;if(!loaded.includes(name))loaded.push(name);return;}
   if(/\.shx$/.test(name)){await viewer.addReferenceFile(file);if(!loaded.includes(name))loaded.push(name);return;}
   if(/\.(ttf|otf)$/.test(name)){
     const family='MX_'+name.replace(/[^a-z0-9]/g,'_');const font=new FontFace(family,await file.arrayBuffer());await font.load();document.fonts.add(font);
