@@ -43,7 +43,7 @@ test('Layout CTB changes plotted pixels without changing original entity colors'
       const d=window.mxCadBenchmark.document(),s=d.metadata.mxSheets.find(s=>s.name==='A3-Civil');
       s.plotStyleSheet='synthetic.ctb';s.viewports=[];
       s.entities=[{type:'SOLID',kind:'solid',handle:'CTB-S',layer:'0',colorIndex:1,vertices:[{x:100,y:100},{x:200,y:100},{x:200,y:200},{x:100,y:200}]}];
-      window.mxCadBenchmark.paper().setSheet(d,s);
+      window.mxCadBenchmark.paper().setSheet(d,s,false);
     });
     const redPixels=()=>page.locator('#viewer-paper canvas').evaluate(c=>{const p=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let n=0;for(let i=0;i<p.length;i+=4)if(p[i]>180&&p[i+1]<80&&p[i+2]<80)n++;return n;});
     await expect.poll(redPixels).toBeGreaterThan(100);
