@@ -250,3 +250,5 @@ button:disabled{opacity:.35;cursor:default}
 .project-dialog{width:min(780px,92vw);max-height:85vh;overflow:auto;background:#192844;color:#e4ebf3;border:1px solid #536177;border-radius:12px;padding:20px}.project-dialog::backdrop{background:#0009}.project-dialog p{font-size:12px;line-height:1.5}.project-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.project-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;border-top:1px solid #536177;padding:12px 0}.project-row>button:first-child{flex:1;min-width:160px;overflow-wrap:anywhere;text-align:left}.project-row label{font-size:11px}.project-row input[type=range]{width:100px}.project-row input[type=color]{width:36px;height:30px}.project-row button[aria-pressed=true]{border-color:#f6af27;color:#f6af27}
 
 .project-composite #entity-color,.project-composite #entity-color-mode,.project-composite #undo-property,.project-composite #redo-property{display:none}
+
+.project-composite .cad-edit-command,.project-composite #new-layer-form{display:none}

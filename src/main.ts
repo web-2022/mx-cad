@@ -152,7 +152,7 @@ function controls() {
   document.querySelectorAll<HTMLButtonElement>('[data-drawing]').forEach(b => b.disabled = (!active && !bim) || !!controller);
   el<HTMLButtonElement>('save-as').disabled=!active||!!controller||!!bim||!!documentModel?.metadata.mxProjectComposite;
   el('layout-tabs').inert=!!controller;
-  el('new-layer-form').inert=!!selectedSheet||is3D;
+  el('new-layer-form').inert=!!selectedSheet||is3D||!!documentModel?.metadata.mxProjectComposite;
   el<HTMLButtonElement>('clear').disabled = !!controller;
   el<HTMLButtonElement>('open').disabled = !!controller;
   navigation?.refresh();
@@ -459,7 +459,7 @@ project=new ProjectManager({
   navigationAdapter().restore(state.view);renderLayers();renderSpaces();showDrawingWarnings(viewer.getLoadResult()?.warnings??[]);
  },
  combined:doc=>{
-  document.querySelector('.shell')!.classList.add('project-composite');closeBim();view3D?.destroy();view3D=undefined;viewer.clear();documentModel=doc;originalFile=undefined;active=true;currentName='Proyecto · Vista conjunta CAD';fileRevision++;selectedSheet=undefined;sessionLayers.clear();tools?.reset(true);modelSpatialFaces=true;el('viewer-paper').hidden=true;viewer.renderer.setDocument(doc);setView3D(true);el('filename').textContent=currentName;el('tab').textContent=currentName;renderSpaces();renderLayers();updateProperties();controls();
+  document.querySelector('.shell')!.classList.add('project-composite');closeBim();view3D?.destroy();view3D=undefined;viewer.clear();documentModel=doc;originalFile=undefined;active=true;currentName='Proyecto · Vista conjunta CAD';fileRevision++;selectedSheet=undefined;regions=[];regionIndex=-1;zoomReferenceScale=undefined;sessionLayers.clear();activeLayer='MX_TRAZOS';tools?.reset(true);modelSpatialFaces=true;el('viewer-paper').hidden=true;viewer.renderer.setDocument(doc);setView3D(true);const heights=view3D?.heightSummary;workElevation=heights&&Math.abs(heights.max-heights.min)<1e-7?heights.min:undefined;modelSpatialFaces=!!view3D?.metrics.triangles&&!!heights&&heights.max-heights.min>1e-7;el('filename').textContent=currentName;el('tab').textContent=currentName;renderSpaces();renderLayers();updateProperties();controls();
  },
  clear:()=>el('clear').click(),notice,light:()=>document.querySelector('.shell')!.classList.contains('light-view'),background:setBackground
 });
