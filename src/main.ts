@@ -1,3 +1,6 @@
+import {validateProjectView} from './project-view';
+import {ProjectManager} from './project-manager';
+import {entityPaths} from './project-cad-state';
 import {diagnostics,diagnosticSummary,type Diagnostic} from './import-diagnostics';
 import type {BlockViewer} from './block-viewer';
 import {drawingPoint} from './coordinate-space';
@@ -23,6 +26,7 @@ import { shapesFromDocument } from './geometry';
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = layout;
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+let project:ProjectManager|undefined;
 let active = false;
 let navigation:Navigation|undefined;
 let fileRevision=0;
@@ -146,7 +150,7 @@ function controls() {
   (document.querySelector('.cad-dock') as HTMLElement | null)?.toggleAttribute('inert', !!controller);
   document.querySelector<HTMLElement>('.sidebar')!.inert = !!controller || !!bim;
   document.querySelectorAll<HTMLButtonElement>('[data-drawing]').forEach(b => b.disabled = (!active && !bim) || !!controller);
-  el<HTMLButtonElement>('save-as').disabled=!active||!!controller||!!bim;
+  el<HTMLButtonElement>('save-as').disabled=!active||!!controller||!!bim||!!documentModel?.metadata.mxProjectComposite;
   el('layout-tabs').inert=!!controller;
   el('new-layer-form').inert=!!selectedSheet||is3D;
   el<HTMLButtonElement>('clear').disabled = !!controller;
@@ -237,7 +241,7 @@ function closeBim(){
   bim?.destroy();bim=undefined;bimHost?.remove();bimHost=undefined;
   el('viewer-bim').hidden=true;document.querySelector('.shell')!.classList.remove('bim-mode');el('layout-tabs').hidden=false;document.querySelector('.viewer-title span')!.textContent='Proyección superior · Geometría y capas';
 }
-async function openBim(file:File,companions:File[]){
+async function openBim(file:File,companions:File[],state?:any){
   if(!file.size){notice('El archivo está vacío.',true);return;}
   controller=new AbortController();const signal=controller.signal;controls();el('busy').hidden=false;el('notice').hidden=true;el('progress-text').textContent='Abriendo modelo 3D…';
   const host=document.createElement('div');host.className='bim-surface';host.style.visibility='hidden';el('viewer-bim').append(host);
@@ -245,8 +249,8 @@ async function openBim(file:File,companions:File[]){
   try{
     const blockFile=/\.(dm|dmx|csv|txt|tsv)$/i.test(file.name);
     if(blockFile){const {BlockViewer}=await import('./block-viewer');candidate=new BlockViewer(host);}else{const {BimViewer}=await import('./bim-viewer');candidate=new BimViewer(host);}
-    if(signal.aborted)throw new DOMException('Cancelado','AbortError');const result=await candidate.load(file,companions,signal,message=>el('progress-text').textContent=message);
-    closeBim();view3D?.destroy();view3D=undefined;is3D=false;bim=candidate;bimHost=host;viewer.clear();documentModel=undefined;originalFile=undefined;active=false;sourceStyleDirty=false;tools?.reset(true);host.style.visibility='';el('viewer-bim').hidden=false;document.querySelector('.shell')!.classList.add('bim-mode');
+    if(signal.aborted)throw new DOMException('Cancelado','AbortError');const result=await (candidate as any).load(file,companions,signal,(message:string)=>el('progress-text').textContent=message,state?.block?.tableSpec);
+    closeBim();document.querySelector('.shell')!.classList.remove('project-composite');view3D?.destroy();view3D=undefined;is3D=false;bim=candidate;bimHost=host;viewer.clear();documentModel=undefined;originalFile=undefined;active=false;sourceStyleDirty=false;tools?.reset(true);host.style.visibility='';el('viewer-bim').hidden=false;document.querySelector('.shell')!.classList.add('bim-mode');
     el('wire-info').hidden=true;el('viewer').hidden=true;el('viewer-paper').hidden=true;el('viewer-3d').hidden=true;el('empty').hidden=true;el('paper-info').hidden=true;el('drawing-region').hidden=true;el('layout-tabs').hidden=true;
     document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command').forEach(n=>n.hidden=true);el('viewport').dataset.view3d='true';
     document.querySelector('.viewer-title span')!.textContent='Modelo 3D · Elementos y propiedades';el('tab').textContent=file.name;el('mode-badge').textContent='MODELO BIM · 3D';el('view-label').textContent=result.format+' · 3D';el('view-hint').textContent='Arrastrar: girar · Botón derecho: desplazar · Rueda: zoom';el('zoom-label').textContent='3D';el('coordinates').textContent='MODELO BIM · LOCAL';
@@ -256,10 +260,10 @@ async function openBim(file:File,companions:File[]){
   }catch(error){candidate?.destroy();host.remove();notice(signal.aborted?'Apertura cancelada.':`No se pudo abrir el modelo. ${error instanceof Error?error.message:String(error)}`,!signal.aborted);}
   finally{controller=undefined;el('busy').hidden=true;controls();}
 }
-async function open(file: File,companions:File[]=[]) {
+async function open(file: File,companions:File[]=[],state?:any) {
   if (controller) return;
   if(/\.(nwd|nwc|nwf)$/i.test(file.name)){notice('NWD/NWC/NWF no se abren directamente. Convierte el modelo previamente a IFC o GLB/glTF.',true);return;}
-  if(/\.(ifc|glb|gltf|dm|dmx|csv|txt|tsv)$/i.test(file.name)){await openBim(file,companions);return;}
+  if(/\.(ifc|glb|gltf|dm|dmx|csv|txt|tsv)$/i.test(file.name)){await openBim(file,companions,state);return;}
   if (!/\.(dwg|dxf)$/i.test(file.name)) { notice('Selecciona un archivo DWG, DXF, IFC, GLB o glTF.', true); return; }
   if (!file.size) { notice('El archivo está vacío. Selecciona otro plano.', true); return; }
   controller = new AbortController(); controls(); el('busy').hidden = false; el('notice').hidden = true;
@@ -268,7 +272,7 @@ async function open(file: File,companions:File[]=[]) {
     const result = await viewer.loadFile(file, { signal: controller.signal });
     closeBim();view3D?.destroy();view3D=undefined;
     sessionLayers.clear(); activeLayer = 'MX_TRAZOS'; el('layer-error').hidden = true;
-    documentModel = viewer.renderer.getSourceDocument();sourceStyleDirty=false; active = true; currentName = file.name;originalFile=file;fileRevision++;
+    document.querySelector('.shell')!.classList.remove('project-composite');documentModel = viewer.renderer.getSourceDocument();sourceStyleDirty=false; active = true; currentName = file.name;originalFile=file;fileRevision++;
     selectedSheet=undefined;el('viewer-paper').hidden=true;el('paper-info').hidden=true;
     if(documentModel)prepareReferences(documentModel);
     viewer.renderer.setDocument(documentModel!);renderSpaces();
@@ -293,7 +297,7 @@ async function open(file: File,companions:File[]=[]) {
 const input = el<HTMLInputElement>('file-input');
 const selectFile = () => { if (!controller) input.click(); };
 el('open').onclick = selectFile;
-function openFiles(files:File[]){const models=files.filter(f=>/\.(dwg|dxf|ifc|glb|gltf|nwd|nwc|nwf|dm|dmx|csv|txt|tsv)$/i.test(f.name));if(models.length!==1){notice('Selecciona un solo modelo y, si es glTF, sus archivos .bin y texturas.',true);return;}void open(models[0],files);}
+function openFiles(files:File[]){if(files.some(f=>/\.(nwd|nwc|nwf)$/i.test(f.name))){notice('NWD/NWC/NWF requieren conversión previa a IFC o GLB.',true);return;}void project?.add(files);}
 input.onchange = () => { const files=Array.from(input.files??[]);input.value='';if(files.length)openFiles(files); };
 el('cancel').onclick = () => controller?.abort();
 el('plus').onclick=()=>navigation?.change(()=>navigationAdapter().zoom(1.25));el('minus').onclick=()=>navigation?.change(()=>navigationAdapter().zoom(.8));el('fit').onclick=()=>navigation?.change(()=>fitDrawing());
@@ -341,7 +345,7 @@ el('background-light').onclick = () => setBackground(true);
 el('load-shx').onclick=()=>el<HTMLInputElement>('shx-input').click();
 el<HTMLInputElement>('shx-input').onchange=async e=>{
   const input=e.target as HTMLInputElement;
-  try{for(const file of input.files??[])await viewer.addReferenceFile(file);showDrawingWarnings(viewer.getLoadResult()?.warnings??[]);tools?.refresh();}
+  try{for(const file of input.files??[]){await viewer.addReferenceFile(file);project?.resource(file);}showDrawingWarnings(viewer.getLoadResult()?.warnings??[]);tools?.refresh();}
   catch(error){notice(`No se pudo cargar la referencia SHX: ${error instanceof Error?error.message:String(error)}`,true);}
   finally{input.value='';}
 };
@@ -349,7 +353,7 @@ el('load-references').onclick=()=>el<HTMLInputElement>('reference-input').click(
 el<HTMLInputElement>('reference-input').onchange=async e=>{
   const input=e.target as HTMLInputElement;if(!documentModel||controller)return;
   try{
-    for(const file of input.files??[])await loadLocalReference(documentModel,file,viewer);
+    for(const file of input.files??[]){await loadLocalReference(documentModel,file,viewer);project?.resource(file);}
     const state=viewer.renderer.getViewState();viewer.renderer.setDocument(documentModel);viewer.renderer.setViewState(state);
     if(selectedSheet)paperView?.setSheet(documentModel,selectedSheet,false);
     showDrawingWarnings(viewer.getLoadResult()?.warnings??[]);renderLayers();tools?.refresh();
@@ -430,3 +434,32 @@ viewport.addEventListener('pointermove',e=>{cursorEvent=e;if(cursorFrame)return;
 viewport.addEventListener('pointerleave',()=>{if(cursorFrame)cancelAnimationFrame(cursorFrame);cursorFrame=0;el('cursor-coordinates').textContent='Coordenadas del dibujo · Norte: — | Este: — | Elevación: —';});
 
 window.addEventListener('pointerdown',e=>{if(viewport.contains(e.target as Node)){activePointer=e.pointerId;pointerActive=true;}},true);window.addEventListener('pointerup',()=>pointerActive=false,true);window.addEventListener('pointercancel',()=>pointerActive=false,true);
+
+project=new ProjectManager({
+ open:async(file,companions,state)=>{const revision=fileRevision;await open(file,companions,state);return fileRevision!==revision;},
+ capture:()=>{
+  if(bim)return{state:{kind:'model',view:bim.getState(),block:'getSession'in bim?bim.getSession():null}};
+  if(!documentModel)return{state:null};
+  const paths=entityPaths(documentModel),keys=new Map([...paths].map(([key,e])=>[e,key]));
+  return{doc:documentModel,state:{kind:'cad',activeLayer,space:selectedSheet?.id??(is3D?'3d':'model'),view:navigationAdapter().state(),appearance:is3D?view3D?.getSession():null,layers:Object.entries(documentModel.layers).map(([key,l])=>({key,visible:l.isVisible!==false,frozen:!!l.isFrozen})),sessionLayers:[...sessionLayers.values()],drawings:tools?.projectDrawings()??[],edits:[...(tools?.edits.changes??[])].map(([e,color])=>({key:keys.get(e),color}))}};
+ },
+ restore:async(state,resources)=>{
+  if(documentModel)for(const f of resources)await loadLocalReference(documentModel,f,viewer);
+  if(!state){if(documentModel){const v=viewer.renderer.getViewState();viewer.renderer.setDocument(documentModel);viewer.renderer.setViewState(v);}return;}
+  validateProjectView(state);
+  if(bim){if(state.block&&'restoreSession'in bim)bim.restoreSession(state.block);bim.setState(state.view);return;}
+  if(!documentModel||state.kind!=='cad')throw Error('Estado del archivo incompatible.');
+  if(!Array.isArray(state.layers)||!Array.isArray(state.edits)||!Array.isArray(state.sessionLayers))throw Error('Estado CAD no válido.');
+  for(const l of state.layers){const layer=documentModel.layers[l.key];if(layer){layer.isVisible=l.visible===true;layer.isFrozen=l.frozen===true;}}
+  sessionLayers.clear();activeLayer=typeof state.activeLayer==='string'?state.activeLayer:'MX_TRAZOS';for(const layer of state.sessionLayers){if(typeof layer.name!=='string'||!/^#[0-9a-f]{6}$/i.test(layer.color))throw Error('Capa de sesión no válida.');sessionLayers.set(layer.name,layer);}
+  const paths=entityPaths(documentModel);for(const e of state.edits){const entity=paths.get(e.key);if(!entity)throw Error('Entidad modificada no encontrada.');tools!.edits.set(entity,e.color);}
+  viewer.renderer.setDocument(documentModel);tools?.refresh();tools?.restoreProjectDrawings(state.drawings??[]);
+  if(state.space==='3d'){selectSpace('model');setView3D(true);if(state.appearance)view3D?.restoreSession(state.appearance);}
+  else if(state.space!=='model'){if(!sheetsOf(documentModel).some(s=>s.id===state.space))throw Error('Presentación de proyecto no encontrada.');selectSpace(state.space);}else{selectedSheet=undefined;setView3D(false);el('viewer-paper').hidden=true;el('viewer').hidden=false;}
+  navigationAdapter().restore(state.view);renderLayers();renderSpaces();showDrawingWarnings(viewer.getLoadResult()?.warnings??[]);
+ },
+ combined:doc=>{
+  document.querySelector('.shell')!.classList.add('project-composite');closeBim();view3D?.destroy();view3D=undefined;viewer.clear();documentModel=doc;originalFile=undefined;active=true;currentName='Proyecto · Vista conjunta CAD';fileRevision++;selectedSheet=undefined;sessionLayers.clear();tools?.reset(true);modelSpatialFaces=true;el('viewer-paper').hidden=true;viewer.renderer.setDocument(doc);setView3D(true);el('filename').textContent=currentName;el('tab').textContent=currentName;renderSpaces();renderLayers();updateProperties();controls();
+ },
+ clear:()=>el('clear').click(),notice,light:()=>document.querySelector('.shell')!.classList.contains('light-view'),background:setBackground
+});

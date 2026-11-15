@@ -108,6 +108,8 @@ export class BimViewer {
     const bounds=new T.Box3();for(const mesh of this.meshes.get(id)??[])if(mesh.visible)bounds.union(new T.Box3().setFromObject(mesh));
     if(!bounds.isEmpty()){this.helper=new T.Box3Helper(bounds,0xf9bc39);this.scene.add(this.helper);}this.render();
   }
+  getSession(){return{hidden:[...this.meshes].filter(([,meshes])=>meshes.every(m=>!m.visible)).map(([id])=>id)};}
+  restoreSession(s:any){if(!Array.isArray(s.hidden)||s.hidden.some((id:any)=>!this.meshes.has(id)))throw Error('Elementos BIM no válidos.');for(const[id,meshes]of this.meshes)for(const m of meshes)m.visible=!s.hidden.includes(id);this.renderItems();this.render();}
   getState(){return {position:this.camera.position.toArray(),target:this.orbit.target.toArray(),near:this.camera.near,far:this.camera.far};}
   setState(s:{position:number[];target:number[];near:number;far:number}){this.camera.position.fromArray(s.position);this.orbit.target.fromArray(s.target);this.camera.near=s.near;this.camera.far=s.far;this.camera.updateProjectionMatrix();this.orbit.update();this.render();}
   setInteractionMode(mode:'select'|'pan'|'orbit'){this.orbit.enableRotate=mode!=='pan';this.orbit.mouseButtons.LEFT=mode==='pan'?T.MOUSE.PAN:T.MOUSE.ROTATE;}

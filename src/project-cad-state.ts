@@ -1,0 +1,2 @@
+import type {CadDocument,CadEntity} from './vendor/cad/core/types';
+export function entityPaths(doc:CadDocument){const paths=new Map<string,CadEntity>();const walk=(items:CadEntity[],prefix:string)=>items.forEach((e,i)=>{const key=prefix+'/'+i;paths.set(key,e);if(e.attribs)walk(e.attribs,key+'/attributes');});walk(doc.entities,'model');for(const[k,b]of Object.entries(doc.blocks))walk(b.entities,'block/'+encodeURIComponent(k));for(const s of (doc.metadata.mxSheets??[]) as {id:string;entities:CadEntity[]}[])walk(s.entities,'sheet/'+encodeURIComponent(s.id));return paths;}

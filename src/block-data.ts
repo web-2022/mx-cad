@@ -1,6 +1,6 @@
 /** Columnar source records stay immutable. Geometry and interpretation are separate. */
 export type Column={name:string;numeric:boolean;data:Float64Array|(string|null)[];implicit?:number|string;unit?:string;sourceName?:string};
-export type Blocks={format:string;count:number;columns:Column[];positions:Float64Array;sizes:Float64Array;basis:number[];origin:number[];units:string;warnings:string[];timings:Record<string,number>;};
+export type Blocks={tableSpec?:any;format:string;count:number;columns:Column[];positions:Float64Array;sizes:Float64Array;basis:number[];origin:number[];units:string;warnings:string[];timings:Record<string,number>;};
 export type Condition={field:string;op:string;value?:number|string|string[];enabled?:boolean};
 export type Filter={join:'AND'|'OR';children:(Filter|Condition)[];enabled?:boolean};
 export type Legend={name:string;field:string;mode:'uniform'|'continuous'|'intervals'|'categories';units:string;opacity:number;color:string;low:string;high:string;nullColor:string;outside:string;min:number;max:number;entries:{label:string;color:string;value?:string;min?:number;max?:number;inclusive?:boolean}[]};
