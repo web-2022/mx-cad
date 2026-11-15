@@ -297,7 +297,7 @@ async function open(file: File,companions:File[]=[],state?:any) {
 const input = el<HTMLInputElement>('file-input');
 const selectFile = () => { if (!controller) input.click(); };
 el('open').onclick = selectFile;
-function openFiles(files:File[]){if(files.some(f=>/\.(nwd|nwc|nwf)$/i.test(f.name))){notice('NWD/NWC/NWF requieren conversión previa a IFC o GLB.',true);return;}void project?.add(files);}
+function openFiles(files:File[]){if(files.some(f=>/\.(nwd|nwc|nwf)$/i.test(f.name))){notice('NWD/NWC/NWF no se abren directamente. Convierte el modelo previamente a IFC o GLB/glTF.',true);return;}void project?.add(files);}
 input.onchange = () => { const files=Array.from(input.files??[]);input.value='';if(files.length)openFiles(files); };
 el('cancel').onclick = () => controller?.abort();
 el('plus').onclick=()=>navigation?.change(()=>navigationAdapter().zoom(1.25));el('minus').onclick=()=>navigation?.change(()=>navigationAdapter().zoom(.8));el('fit').onclick=()=>navigation?.change(()=>fitDrawing());
