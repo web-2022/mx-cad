@@ -183,6 +183,7 @@ function showDrawingWarnings(warnings:string[]){
   const missing=viewer.getMissingReferences();
   drawingDiagnostics=diagnostics([...warnings,...(documentModel?fidelityWarnings(documentModel):[]),...(selectedSheet?.warnings??[]),...missing.map(r=>'Falta símbolo SHX: '+r.fileName)]);renderDiagnostics();
 }
+el('diagnostic-open').onclick=()=>{if(!documentModel||bim)return;document.querySelector('.shell')!.classList.add('has-selection');el<HTMLDetailsElement>('drawing-warnings').open=true;document.querySelector('.properties .panel-content')?.scrollTo({top:0});};
 el('diagnostic-filter').onchange=renderDiagnostics;
 el('diagnostic-export').onclick=()=>{
   const result=viewer.getLoadResult(),report={version:1,filename:currentName,scope:selectedSheet?.name??'Model',summary:diagnosticSummary(drawingDiagnostics),diagnostics:drawingDiagnostics,loadMs:result?.elapsedMs,render3D:currentCad3D()?.metrics,layouts:sheetsOf(documentModel).map(s=>({name:s.name,width:s.width,height:s.height,units:s.units,viewports:s.viewports.length})),note:'Diagnóstico del visor; no certifica equivalencia visual con AutoCAD. No incluye geometría ni archivos de referencia.'};
