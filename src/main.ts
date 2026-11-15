@@ -1,3 +1,4 @@
+import {diagnostics,diagnosticSummary,type Diagnostic} from './import-diagnostics';
 import type {BlockViewer} from './block-viewer';
 import {drawingPoint} from './coordinate-space';
 import {drawAxes,topAxes} from './view-indicator';
@@ -171,15 +172,22 @@ function updateProperties(file?: File) {
   if (!counts.size) { const p = document.createElement('p'); p.className = 'small-note'; p.textContent = 'Carga un plano para consultar su contenido.'; host.append(p); }
 }
 function notice(message: string, error = false) { const n = el('notice'); n.textContent = message; n.classList.toggle('error', error); n.hidden = false; }
-function showDrawingWarnings(warnings: string[]) {
-  const missing=viewer.getMissingReferences();
-  const messages=[...new Set([...warnings,...(documentModel?fidelityWarnings(documentModel):[]),...(selectedSheet?.warnings??[])])].filter(message=>!(/shx/i.test(message)&&!missing.length));
-  const host=el('drawing-warning-list');host.replaceChildren();
-  if(missing.length){const p=document.createElement('p');p.textContent=`Faltan símbolos SHX: ${missing.map(r=>r.fileName).join(', ')}. Se usan trazos alternativos; esto no impide visualizar la geometría.`;host.append(p);}
-  for(const message of messages.filter(m=>!/shx/i.test(m))){const p=document.createElement('p');p.textContent=message;host.append(p);}
-  el('drawing-warnings').hidden=!host.children.length;
-  el('warning-count').textContent=String(host.children.length);
+let drawingDiagnostics:Diagnostic[]=[];
+function renderDiagnostics(){
+  const host=el('drawing-warning-list'),filter=el<HTMLSelectElement>('diagnostic-filter').value;host.replaceChildren();
+  for(const item of drawingDiagnostics.filter(i=>filter==='all'||i.group===filter)){const p=document.createElement('p');p.textContent=item.message;const advice=document.createElement('small');advice.style.display='block';advice.textContent=item.action;p.append(advice);host.append(p);}
+  const counts=diagnosticSummary(drawingDiagnostics);el('diagnostic-summary').textContent=`${counts.resources} recursos pendientes · ${counts.approximate} aproximaciones · ${counts.unsupported} limitaciones · ${counts.reader} avisos del lector`;
+  el('drawing-warnings').hidden=!drawingDiagnostics.length;el('warning-count').textContent=String(drawingDiagnostics.length);
 }
+function showDrawingWarnings(warnings:string[]){
+  const missing=viewer.getMissingReferences();
+  drawingDiagnostics=diagnostics([...warnings,...(documentModel?fidelityWarnings(documentModel):[]),...(selectedSheet?.warnings??[]),...missing.map(r=>'Falta símbolo SHX: '+r.fileName)]);renderDiagnostics();
+}
+el('diagnostic-filter').onchange=renderDiagnostics;
+el('diagnostic-export').onclick=()=>{
+  const result=viewer.getLoadResult(),report={version:1,filename:currentName,scope:selectedSheet?.name??'Model',summary:diagnosticSummary(drawingDiagnostics),diagnostics:drawingDiagnostics,loadMs:result?.elapsedMs,render3D:currentCad3D()?.metrics,layouts:sheetsOf(documentModel).map(s=>({name:s.name,width:s.width,height:s.height,units:s.units,viewports:s.viewports.length})),note:'Diagnóstico del visor; no certifica equivalencia visual con AutoCAD. No incluye geometría ni archivos de referencia.'};
+  const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='mx-cad-diagnostico.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
 el('notice').onclick = () => { el('notice').hidden = true; };
 function renderLayers() {
   const host = el('layers'); host.replaceChildren();
