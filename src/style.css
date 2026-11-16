@@ -9,7 +9,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 button:disabled{opacity:.35;cursor:default}
 .primary{background:linear-gradient(135deg,var(--orange),var(--gold));border-color:var(--gold);color:#192844}
 .primary:hover{background:#ffca5c}
-.shell{height:100dvh;min-height:570px;max-width:2000px;margin:auto;padding:12px 14px 0;display:grid;grid-template-rows:80px 40px minmax(0,1fr) 30px;gap:10px}
+.shell{height:100dvh;min-height:570px;width:100%;max-width:none;margin:0;padding:12px 14px 0;display:grid;grid-template-rows:80px 40px minmax(0,1fr) 30px;gap:10px}
 .topbar{display:flex;align-items:center;gap:24px;border:1px solid var(--border);border-radius:12px;padding:12px 20px;background:linear-gradient(115deg,#22365a,#192844 70%);box-shadow:0 8px 25px #04091235}
 .brand{display:flex;align-items:center;gap:12px;flex-shrink:0}
 .mark{width:50px;height:50px;display:grid;place-items:center;font-weight:850;font-size:22px;letter-spacing:-1px;color:#192844;background:linear-gradient(130deg,var(--orange),var(--gold));border-radius:9px;box-shadow:0 4px 14px #f39c1c22}
