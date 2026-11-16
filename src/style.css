@@ -252,3 +252,5 @@ button:disabled{opacity:.35;cursor:default}
 .project-composite #entity-color,.project-composite #entity-color-mode,.project-composite #undo-property,.project-composite #redo-property{display:none}
 
 .project-composite .cad-edit-command,.project-composite #new-layer-form{display:none}
+
+.mixed-layers{border-bottom:1px solid #536177;padding-bottom:12px;margin-bottom:16px}.mixed-layers p,.mixed-layers small{font-size:10px;line-height:1.5}.mixed-layers fieldset{border:1px solid #536177;margin:8px 0;padding:7px;min-width:0;overflow-wrap:anywhere}.mixed-layers input[type=range]{width:100%;margin:7px 0}.mixed-layers input[type=color]{width:35px;height:27px}.mixed-layers select{max-width:100%;font-size:11px}

@@ -1,3 +1,4 @@
+import type {MixedInput} from './mixed-types';
 import {validateProjectView} from './project-view';
 import {ProjectManager} from './project-manager';
 import {entityPaths} from './project-cad-state';
@@ -438,7 +439,7 @@ window.addEventListener('pointerdown',e=>{if(viewport.contains(e.target as Node)
 project=new ProjectManager({
  open:async(file,companions,state)=>{const revision=fileRevision;await open(file,companions,state);return fileRevision!==revision;},
  capture:()=>{
-  if(bim)return{state:{kind:'model',view:bim.getState(),block:'getSession'in bim?bim.getSession():null}};
+  if(bim)return{blocks:'modelData'in bim?bim.modelData():undefined,state:{kind:'model',view:bim.getState(),block:'getSession'in bim?bim.getSession():null,mixed:'getMixedSession'in bim?bim.getMixedSession():undefined}};
   if(!documentModel)return{state:null};
   const paths=entityPaths(documentModel),keys=new Map([...paths].map(([key,e])=>[e,key]));
   return{doc:documentModel,state:{kind:'cad',activeLayer,space:selectedSheet?.id??(is3D?'3d':'model'),view:navigationAdapter().state(),appearance:is3D?view3D?.getSession():null,layers:Object.entries(documentModel.layers).map(([key,l])=>({key,visible:l.isVisible!==false,frozen:!!l.isFrozen})),sessionLayers:[...sessionLayers.values()],drawings:tools?.projectDrawings()??[],edits:[...(tools?.edits.changes??[])].map(([e,color])=>({key:keys.get(e),color}))}};
@@ -447,7 +448,7 @@ project=new ProjectManager({
   if(documentModel)for(const f of resources)await loadLocalReference(documentModel,f,viewer);
   if(!state){if(documentModel){const v=viewer.renderer.getViewState();viewer.renderer.setDocument(documentModel);viewer.renderer.setViewState(v);}return;}
   validateProjectView(state);
-  if(bim){if(state.block&&'restoreSession'in bim)bim.restoreSession(state.block);bim.setState(state.view);return;}
+  if(bim){if(state.block&&'restoreSession'in bim)bim.restoreSession(state.block);if(state.mixed&&'restoreMixed'in bim)bim.restoreMixed(state.mixed);bim.setState(state.view);return;}
   if(!documentModel||state.kind!=='cad')throw Error('Estado del archivo incompatible.');
   if(!Array.isArray(state.layers)||!Array.isArray(state.edits)||!Array.isArray(state.sessionLayers))throw Error('Estado CAD no válido.');
   for(const l of state.layers){const layer=documentModel.layers[l.key];if(layer){layer.isVisible=l.visible===true;layer.isFrozen=l.frozen===true;}}
@@ -460,6 +461,19 @@ project=new ProjectManager({
  },
  combined:doc=>{
   document.querySelector('.shell')!.classList.add('project-composite');closeBim();view3D?.destroy();view3D=undefined;viewer.clear();documentModel=doc;originalFile=undefined;active=true;currentName='Proyecto · Vista conjunta CAD';fileRevision++;selectedSheet=undefined;regions=[];regionIndex=-1;zoomReferenceScale=undefined;sessionLayers.clear();activeLayer='MX_TRAZOS';tools?.reset(true);modelSpatialFaces=true;el('viewer-paper').hidden=true;viewer.renderer.setDocument(doc);setView3D(true);const combinedView=currentCad3D(),heights=combinedView?.heightSummary;workElevation=heights&&Math.abs(heights.max-heights.min)<1e-7?heights.min:undefined;modelSpatialFaces=!!combinedView?.metrics.triangles&&!!heights&&heights.max-heights.min>1e-7;el('filename').textContent=currentName;el('tab').textContent=currentName;renderSpaces();renderLayers();updateProperties();controls();
+ },
+ mixed:async(input:MixedInput,preserve?:any)=>{
+  if(controller)throw Error('Espera a que termine la operación actual.');controller=new AbortController();const signal=controller.signal;controls();el('busy').hidden=false;el('progress-text').textContent='Preparando CAD y bloques en la misma escena…';
+  const host=document.createElement('div');host.className='bim-surface';host.style.visibility='hidden';el('viewer-bim').append(host);let candidate:BlockViewer|undefined;
+  try{
+   const {prepareMixed}=await import('./mixed-prepare'),{BlockViewer}=await import('./block-viewer');const prepared=prepareMixed(input),source=input.blocks.find(b=>b.id===input.active)!;
+   candidate=new BlockViewer(host);await candidate.loadModel(source.model,source.name,signal,message=>el('progress-text').textContent=message,prepared.origin);if(source.state?.block)candidate.restoreSession(source.state.block);candidate.attachScene(input,id=>project?.changeActiveBlock(id),prepared.warnings);
+   if(preserve?.mixed){validateProjectView(preserve);candidate.restoreMixed({...preserve.mixed,active:input.active});}
+   if(signal.aborted)throw new DOMException('Cancelado','AbortError');closeBim();view3D?.destroy();view3D=undefined;is3D=false;bim=candidate;bimHost=host;viewer.clear();documentModel=undefined;originalFile=undefined;active=false;sourceStyleDirty=false;tools?.reset(true);fileRevision++;currentName='Proyecto · CAD y bloques';
+   document.querySelector('.shell')!.classList.remove('project-composite');document.querySelector('.shell')!.classList.add('bim-mode');host.style.visibility='';el('viewer-bim').hidden=false;for(const id of ['viewer','viewer-paper','viewer-3d','wire-info','empty','paper-info','drawing-region','layout-tabs'])el(id).hidden=true;
+   document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command').forEach(n=>n.hidden=true);el('viewport').dataset.view3d='true';el('tab').textContent=currentName;el('context-name').textContent=currentName;el('mode-badge').textContent='ESCENA CONJUNTA · 3D';el('view-label').textContent='CAD + BLOQUES · 3D';el('zoom-label').textContent='3D';document.querySelector('.viewer-title span')!.textContent='Coordenadas originales · Un origen visual común';el('status').textContent=`${input.cad.length} archivo(s) CAD · ${input.blocks.length} modelo(s) de bloques · Procesamiento local`;
+   candidate.background(document.querySelector('.shell')!.classList.contains('light-view'));await new Promise<void>(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())));if(source.state?.block)candidate.restoreSession(source.state.block);candidate.fit();if(preserve?.view)candidate.setState(preserve.view);
+  }catch(error){if(candidate!==bim){candidate?.destroy();host.remove();}throw error;}finally{controller=undefined;el('busy').hidden=true;controls();}
  },
  clear:()=>el('clear').click(),notice,light:()=>document.querySelector('.shell')!.classList.contains('light-view'),background:setBackground
 });
