@@ -148,6 +148,7 @@ function selectSpace(id:string){
 
 
 function controls() {
+  if(bimHost)bimHost.inert=!!controller;
   (document.querySelector('.cad-dock') as HTMLElement | null)?.toggleAttribute('inert', !!controller);
   document.querySelector<HTMLElement>('.sidebar')!.inert = !!controller || !!bim;
   document.querySelectorAll<HTMLButtonElement>('[data-drawing]').forEach(b => b.disabled = (!active && !bim) || !!controller);
