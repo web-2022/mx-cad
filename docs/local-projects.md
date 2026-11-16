@@ -19,11 +19,11 @@ Se conservan los ajustes activos de cada archivo al cambiar entre modelos. Las m
 
 ## Vista conjunta CAD
 
-En Proyecto, configura **Vista conjunta**, color visual y opacidad de superficies por archivo, y pulsa **Ver CAD juntos**. Para CAD sin bloques, combina Model de DWG/DXF en coordenadas originales. También existe una escena compartida CAD + modelos de bloques; consulta [CAD y bloques](shared-cad-blocks.md). Cada archivo mantiene un prefijo interno para evitar colisiones de bloques, capas e identificadores. No se desplazan ni se centran archivos por separado, ni se escalan para hacerlos coincidir.
+En Proyecto, configura **Vista conjunta**, color visual y opacidad de superficies por archivo, y pulsa **Ver juntos**. Para CAD sin bloques, combina Model de DWG/DXF en coordenadas originales. También existe una escena compartida CAD + modelos de bloques; consulta [CAD y bloques](shared-cad-blocks.md). Cada archivo mantiene un prefijo interno para evitar colisiones de bloques, capas e identificadores. No se desplazan ni se centran archivos por separado, ni se escalan para hacerlos coincidir.
 
 Se rechazan unidades diferentes. Unidades iguales no prueban que los sistemas de coordenadas sean iguales: el usuario debe comprobar esa correspondencia. La vista conjunta no transforma proyecciones geográficas. Los archivos sin unidades conservan sus números sin asumir metros o milímetros.
 
-Los Layouts se consultan seleccionando su archivo original. IFC y GLB/glTF se consultan individualmente. Los modelos de bloques pueden superponerse con CAD mediante Ver juntos. La opacidad por archivo afecta a superficies sombreadas; no modifica la opacidad de los trazos alámbricos. Los cambios de apariencia conjuntos no cambian los archivos originales.
+Los Layouts se consultan seleccionando su archivo original. IFC y GLB/glTF se consultan individualmente. Los modelos de bloques pueden superponerse con CAD mediante Ver juntos. En la vista solo CAD, la opacidad por archivo afecta a las superficies sombreadas. En la escena CAD + bloques, los controles Mostrar en escena, color y opacidad se aplican a cada archivo, incluyendo los trazos de topografía. Los cambios de apariencia conjuntos no cambian los archivos originales.
 
 La vista conjunta permite navegar, seleccionar y exportar PNG. Para editar una entidad o guardar DXF, selecciona el archivo individual. Guardar proyecto conserva la vista conjunta activa y su cámara, además de los ajustes individuales.
 
