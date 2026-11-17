@@ -40,7 +40,7 @@ export class CadTools {
     const actions=document.createElement('div');actions.innerHTML='<button id="undo-property" title="Deshacer cambio de color">↶ Color</button><button id="redo-property" title="Rehacer cambio de color">↷ Color</button>';selection.append(actions);const measureSpace=document.createElement('select');measureSpace.id='measure-space';measureSpace.setAttribute('aria-label','Espacio de medición de ángulos');measureSpace.innerHTML='<option value="xy">Ángulos XY</option><option value="3d">Ángulos espaciales (puntos capturados)</option>';selection.append(measureSpace);
     document.getElementById('undo-property')!.onclick=()=>{if(this.edits.undo())this.changed();};document.getElementById('redo-property')!.onclick=()=>{if(this.edits.redo())this.changed();};
     document.getElementById('save-drawings')!.onclick=()=>this.download();
-    this.viewport.addEventListener('pointerdown',e=>{
+    this.viewport.addEventListener('pointerdown',e=>{if(this.viewport.classList.contains('file-view-hidden')||this.viewport.dataset.projectLocked==='true')return;
       if(this.viewport.dataset.view3d==='true')return;
       if(!(e.target instanceof HTMLCanvasElement))return;
       if(e.button!==0)return;
@@ -61,7 +61,7 @@ export class CadTools {
     });
     this.viewport.addEventListener('pointerleave',()=>{this.snapped=undefined;this.cursor=undefined;this.redraw();});
     window.addEventListener('keydown',e=>{
-      if(e.key==='Escape'){this.escape();return;}
+      if(this.viewport.dataset.projectLocked==='true'&&e.key!=='Escape')return;if(e.key==='Escape'){this.escape();return;}
       if(this.viewport.dataset.view3d==='true')return;
       if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement)return;
       if(e.key==='Escape')this.escape();

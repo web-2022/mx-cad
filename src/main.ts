@@ -27,7 +27,7 @@ import { shapesFromDocument } from './geometry';
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = layout;
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
-let project:ProjectManager|undefined;
+let project:ProjectManager|undefined;let projectBusy=false;
 let active = false;
 let navigation:Navigation|undefined;
 let fileRevision=0;
@@ -148,15 +148,17 @@ function selectSpace(id:string){
 
 
 function controls() {
-  if(bimHost)bimHost.inert=!!controller;
-  (document.querySelector('.cad-dock') as HTMLElement | null)?.toggleAttribute('inert', !!controller);
-  document.querySelector<HTMLElement>('.sidebar')!.inert = !!controller;
-  document.querySelectorAll<HTMLButtonElement>('[data-drawing]').forEach(b => b.disabled = (!active && !bim) || !!controller);
-  el<HTMLButtonElement>('save-as').disabled=!active||!!controller||!!documentModel?.metadata.mxProjectComposite;
-  el('layout-tabs').inert=!!controller;
+  const locked=!!controller||projectBusy;el('viewport').dataset.projectLocked=String(locked);for(const id of ['model-tools','cad-edit-tools'])el(id).inert=locked;document.querySelector<HTMLElement>('.properties')!.inert=locked;
+  if(bimHost)bimHost.inert=locked;
+  (document.querySelector('.cad-dock') as HTMLElement | null)?.toggleAttribute('inert', locked);
+  document.querySelector<HTMLElement>('.sidebar')!.inert = locked;
+  document.querySelectorAll<HTMLButtonElement>('[data-drawing]').forEach(b => b.disabled = (!active && !bim) || locked||el('viewport').classList.contains('file-view-hidden'));
+  el<HTMLButtonElement>('export').disabled=(!active&&!bim)||locked||el('viewport').classList.contains('file-view-hidden');
+  el<HTMLButtonElement>('save-as').disabled=!active||locked||!!documentModel?.metadata.mxProjectComposite;
+  el('layout-tabs').inert=locked;
   el('new-layer-form').inert=!!selectedSheet||is3D||!!documentModel?.metadata.mxProjectComposite;
-  el<HTMLButtonElement>('clear').disabled = !!controller;
-  el<HTMLButtonElement>('open').disabled = !!controller;
+  el<HTMLButtonElement>('clear').disabled = locked;
+  el<HTMLButtonElement>('open').disabled = locked;
   navigation?.refresh();
 }
 function updateProperties(file?: File) {
@@ -315,6 +317,7 @@ el('new-layer-form').onsubmit = e => {
   activeLayer = name; error.hidden = true; el<HTMLInputElement>('new-layer-name').value = ''; renderLayers(); tools?.refresh();
 };
 function clearWorkspace() {
+  el('viewport').classList.remove('file-view-hidden');
   if (controller) return;
   closeBim();view3D?.destroy();view3D=undefined;sourceStyleDirty=false;viewer.clear();fileRevision++;
   selectedSheet=undefined;el('viewer-paper').hidden=true;el('paper-info').hidden=true;
@@ -390,7 +393,7 @@ tools = new CadTools(viewer, {
 });
 function navigationAdapter():NavigationAdapter {
   const context=bim?'bim':selectedSheet?'paper':is3D?'wire':'model';
-  const enabled=!!(active||bim)&&!controller;
+  const enabled=!!(active||bim)&&!controller&&!projectBusy&&!el('viewport').classList.contains('file-view-hidden');
   if(bim)return {key:fileRevision+':bim',revision:fileRevision,context,enabled,canvas:bim.canvas,state:()=>bim!.getState(),restore:s=>bim!.setState(s),zoom:f=>bim!.zoom(f),fit:()=>bim!.fit(),window:b=>bim!.zoomWindow(b),setMode:m=>bim!.setInteractionMode(m),preset:v=>bim!.preset(v)};
   if(selectedSheet&&paperView)return {key:fileRevision+':paper:'+selectedSheet.id,revision:fileRevision,context,enabled,canvas:paperView.canvas,state:()=>paperView!.getState(),restore:s=>paperView!.setState(s),zoom:f=>paperView!.zoom(f),fit:()=>paperView!.fit(),window:b=>paperView!.zoomWindow(b),setMode:m=>paperView!.setInteractionMode(m)};
   if(is3D&&view3D)return {key:fileRevision+':wire',revision:fileRevision,context,enabled,canvas:view3D.canvas,state:()=>view3D!.getState(),restore:s=>view3D!.setState(s),zoom:f=>view3D!.zoom(f),fit:()=>view3D!.fit(),window:b=>view3D!.zoomWindow(b),setMode:m=>view3D!.setInteractionMode(m),preset:v=>{if(v==='top'&&!view3D!.metrics.triangles)setView3D(false);else view3D!.preset(v);}};
@@ -426,7 +429,7 @@ el('save-confirm').onclick=async()=>{
 el('maximize').onclick=()=>{const shell=document.querySelector('.shell')!,max=shell.classList.toggle('workspace-maximized');el('maximize').setAttribute('aria-pressed',String(max));requestAnimationFrame(()=>{viewer.resize();if(selectedSheet)paperView?.fit();});};
 viewport.addEventListener('mx:axes',e=>drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),(e as CustomEvent).detail));
 viewport.addEventListener('mx:frame-selection',()=>navigation?.change(()=>view3D?.fitSelection()));
-viewport.addEventListener('mx:objectselect',e=>{const detail=(e as CustomEvent).detail,origin=bim&&'getWorldOrigin'in bim?bim.getWorldOrigin():undefined;if(detail?.point&&origin)detail.worldPoint={x:detail.point.x+origin[0],y:detail.point.y+origin[1],z:(detail.point.z??0)+origin[2]};project?.entitySelection(detail);});
+viewport.addEventListener('mx:objectselect',e=>{const detail=(e as CustomEvent).detail,origin=bim&&'getWorldOrigin'in bim?bim.getWorldOrigin():undefined;if(detail?.point&&origin)detail.worldPoint={x:detail.point.x+origin[0],y:detail.point.y+origin[1],z:(detail.point.z??0)+origin[2]};project?.entitySelection(detail);document.querySelector('.shell')!.classList.add('has-selection');});
 viewport.addEventListener('mx:selectshape',e=>{project?.entitySelection();tools?.selectExternal((e as CustomEvent).detail);});
 viewport.addEventListener('mx:entityedit',event=>{if(is3D||selectedSheet)sourceStyleDirty=true;if(selectedSheet&&documentModel)paperView?.setSheet(documentModel,selectedSheet,false);if(is3D&&documentModel)view3D?.updateEntity((event as CustomEvent).detail?.entity);});
 drawAxes(el<SVGSVGElement & HTMLElement>('axis-indicator'),topAxes);
@@ -440,9 +443,10 @@ window.addEventListener('pointerdown',e=>{if(viewport.contains(e.target as Node)
 
 el('clear').onclick=()=>void project?.newProject();
 project=new ProjectManager({
+ locked:busy=>{projectBusy=busy;controls();},
  fileAppearance:(id,color,opacity)=>view3D?.setProjectStyle(id,color,opacity),
  context:()=>({mixed:bim&&'getMixedSession'in bim?bim.getMixedSession():undefined}),
- fileVisibility:(id,visible)=>{if(bim&&'setFileVisible'in bim){bim.setFileVisible(visible);return true;}const mapping=documentModel?.metadata.mxSourceLayers as Record<string,{id:string;visible:boolean;frozen:boolean}>|undefined;if(!mapping||!view3D||!documentModel)return false;const states=(documentModel.metadata.mxFileVisibility??={}) as Record<string,boolean>;states[id]=visible;for(const [key,source]of Object.entries(mapping))if(source.id===id&&documentModel.layers[key]){documentModel.layers[key].isVisible=visible&&source.visible;documentModel.layers[key].isFrozen=source.frozen;}view3D.updateAppearance();return true;},
+ fileVisibility:(id,visible)=>{if(bim&&'setFileVisible'in bim){el('viewport').classList.remove('file-view-hidden');bim.setFileVisible(visible);return true;}const mapping=documentModel?.metadata.mxSourceLayers as Record<string,{id:string;visible:boolean;frozen:boolean}>|undefined;if(!mapping&&documentModel&&!documentModel.metadata.mxProjectComposite){el('viewport').classList.toggle('file-view-hidden',!visible);if(!visible)tools?.escape();controls();return true;}if(!mapping||!view3D||!documentModel)return false;const states=(documentModel.metadata.mxFileVisibility??={}) as Record<string,boolean>;states[id]=visible;for(const [key,source]of Object.entries(mapping))if(source.id===id&&documentModel.layers[key]){documentModel.layers[key].isVisible=visible&&source.visible;documentModel.layers[key].isFrozen=source.frozen;}view3D.updateAppearance();return true;},
  selectItem:id=>{if(bim&&'selectItem'in bim)bim.selectItem(id);},
  inspect:()=>{tools?.escape();bim?.escape();},
  space:id=>selectSpace(id),
@@ -471,6 +475,7 @@ project=new ProjectManager({
   navigationAdapter().restore(state.view);renderLayers();renderSpaces();showDrawingWarnings(viewer.getLoadResult()?.warnings??[]);
  },
  combined:(doc,preserve)=>{
+  el('viewport').classList.remove('file-view-hidden');
   document.querySelector('.shell')!.classList.add('project-composite');closeBim();view3D?.destroy();view3D=undefined;viewer.clear();documentModel=doc;originalFile=undefined;active=true;currentName='Proyecto · Vista conjunta CAD';fileRevision++;selectedSheet=undefined;regions=[];regionIndex=-1;zoomReferenceScale=undefined;sessionLayers.clear();activeLayer='MX_TRAZOS';tools?.reset(true);modelSpatialFaces=true;el('viewer-paper').hidden=true;viewer.renderer.setDocument(doc);setView3D(true);const combinedView=currentCad3D();if(combinedView){for(const[id,style]of Object.entries((doc.metadata.mxProjectStyles??{}) as Record<string,{color?:string;opacity:number}>))combinedView.setProjectStyle(id,style.color,style.opacity,false);combinedView.updateAppearance();}if(combinedView&&preserve?.view?.position&&preserve.worldOrigin){const origin=combinedView.getWorldOrigin(),view=structuredClone(preserve.view);for(const key of ['position','target'])view[key]=view[key].map((n:number,i:number)=>n+preserve.worldOrigin[i]-origin[i]);combinedView.setState(view);}const heights=combinedView?.heightSummary;workElevation=heights&&Math.abs(heights.max-heights.min)<1e-7?heights.min:undefined;modelSpatialFaces=!!combinedView?.metrics.triangles&&!!heights&&heights.max-heights.min>1e-7;el('filename').textContent=currentName;el('tab').textContent=currentName;renderSpaces();renderLayers();updateProperties();controls();
  },
  mixed:async(input:MixedInput,preserve?:any)=>{

@@ -6,6 +6,7 @@ import { sheetsOf } from './drawing-spaces';
 import { combineCad } from './project-cad';
 import type { CadDocument } from './vendor/cad/core/types';
 interface Adapter {
+    locked?(busy:boolean):void;
     open(file: File, companions: File[], state: any): Promise<boolean>;
     context?(): {
         mixed?: any;
@@ -44,7 +45,7 @@ export class ProjectManager {
     private docs = new Map<string, CadDocument>();
     private models = new Map<string, Blocks>();
     constructor(private adapter: Adapter) {
-        document.getElementById('project-menu')!.onclick = () => { this.render(); (document.getElementById('project-dialog') as HTMLDialogElement).showModal(); };
+        document.getElementById('project-menu')!.onclick = () => { if(this.busy)return;this.render(); (document.getElementById('project-dialog') as HTMLDialogElement).showModal(); };
         document.getElementById('project-close')!.onclick = () => this.close();
         document.getElementById('project-save')!.onclick = () => void this.save();
         document.getElementById('project-open')!.onclick = () => { this.close(); document.getElementById('project-input')!.click(); };
@@ -117,13 +118,15 @@ export class ProjectManager {
         this.snapshot();
         const previousIDs = new Set(this.entries.map(e => e.id)), captured = this.adapter.capture().state, previousScene = this.composite ? structuredClone(this.compositeState) : captured?.worldOrigin ? structuredClone(captured) : undefined, previousActive = this.active;
         try {
+            const added:ProjectEntry[]=[];
             for (const file of models) {
                 const e: ProjectEntry = { id: crypto.randomUUID(), file, companions: files.filter(f => !modelFile(f.name)), resources: [], state: null, visible: true, opacity: 1 };
                 this.entries.push(e);
                 if (!await this.activate(e)) {
                     this.entries = this.entries.filter(x => x !== e);
-                }
+                }else added.push(e);
             }
+            if(!added.length)return;
             if (this.entries.filter(e => /\.(dwg|dxf|dm|dmx|csv|txt|tsv)$/i.test(e.file.name)).length > 1) {
                 if (!await this.combine(true, undefined, previousScene)) {
                     const all = this.entries, selection = this.selected;
@@ -398,6 +401,7 @@ export class ProjectManager {
     }
     private inspect(e: ProjectEntry) { this.adapter.inspect?.(); this.selected = e.id; document.querySelector('.shell')!.classList.add('has-selection', 'has-project-selection'); this.render(false); }
     render(rebuildTree = true) {
+        this.adapter.locked?.(this.busy);
         const host = document.getElementById('project-tree')!;
         if (rebuildTree)
             host.replaceChildren();
