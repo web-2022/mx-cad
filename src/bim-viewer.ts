@@ -17,6 +17,7 @@ export class BimViewer {
   private filter:HTMLInputElement;
   private stage:HTMLElement;
   private helper:any;
+  private sourceBounds?:{min:number[];max:number[]};
   private pointer?:{x:number;y:number};
   readonly canvas:HTMLCanvasElement;
   constructor(privateHost:HTMLElement){
@@ -45,7 +46,7 @@ export class BimViewer {
     this.root.updateMatrixWorld(true);
     const bounds=new T.Box3().setFromObject(this.root),center=bounds.getCenter(new T.Vector3()),size=bounds.getSize(new T.Vector3());
     if(bounds.isEmpty()||![center.x,center.y,center.z,size.x,size.y,size.z].every(Number.isFinite))throw Error('El modelo tiene coordenadas o límites inválidos.');
-    this.root.position.sub(center);this.root.updateMatrixWorld(true);this.renderItems();
+    this.sourceBounds={min:bounds.min.toArray(),max:bounds.max.toArray()};this.root.position.sub(center);this.root.updateMatrixWorld(true);this.renderItems();
     return{count:this.items.length,format:modelFormat(file.name).toUpperCase()};
   }
   private async loadIfc(file:File,signal:AbortSignal,progress:(s:string)=>void){
@@ -126,6 +127,8 @@ export class BimViewer {
   escape(){this.pointer=undefined;this.clearSelection();this.properties.replaceChildren();this.render();}
   cursorPoint(clientX:number,clientY:number){const r=this.canvas.getBoundingClientRect();if(clientX<r.left||clientX>r.right||clientY<r.top||clientY>r.bottom)return;const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((clientX-r.left)/r.width*2-1,1-(clientY-r.top)/r.height*2),this.camera);const hit=ray.intersectObject(this.root,true).find((h:any)=>h.object.isMesh&&h.object.visible);if(!hit)return;const p=hit.point.clone().sub(this.root.position);return {x:p.x,y:p.y,z:p.z};}
   render(){this.renderer.render(this.scene,this.camera);const inverse=this.camera.quaternion.clone().invert(),axes:any={};for(const [name,v]of [['x',[1,0,0]],['y',[0,1,0]],['z',[0,0,1]]] as const){const p=new T.Vector3(...v).applyQuaternion(inverse);axes[name]={x:p.x,y:p.y};}document.getElementById('viewport')?.dispatchEvent(new CustomEvent('mx:axes',{detail:axes}));}
+  describe(){return{count:this.items.length,bounds:this.sourceBounds,items:this.items.slice(0,500).map(i=>({...i,properties:{...i.properties}}))};}
+  selectItem(id:number){this.select(id);}
   mountTools(target:HTMLElement){const panel=this.filter.closest('aside')!;target.replaceChildren(panel);}
   destroy(){this.filter.closest('aside')?.remove();
     this.observer.disconnect();this.orbit.dispose();this.clearSelection();
