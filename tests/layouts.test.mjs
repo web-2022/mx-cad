@@ -38,7 +38,7 @@ test('DXF: separate sheets, paper sizes, viewport hatch islands, layers, local i
     await page.locator('#export').click();await expect.poll(async()=>{try{return(await readFile('test-results/layout.png')).length>8;}catch{return false;}}).toBe(true);
     const png=await readFile('test-results/layout.png');assert.deepEqual([...png.subarray(0,8)],[137,80,78,71,13,10,26,10]);
     await page.getByRole('tab',{name:'Model',exact:true}).click();await page.locator('#nav-orbit').click();assert.equal(await page.locator('#viewer-3d').isVisible(),true);await page.locator('#nav-top').click();
-    await page.locator('#clear').click();assert.deepEqual(await page.locator('#layout-tabs button').allTextContents(),['Model']);assert.equal(await page.locator('#empty').isVisible(),false);assert.deepEqual(errors,[]);
+    await page.locator('#clear').click();if(await page.locator('#new-project-dialog').isVisible())await page.locator('[data-new=discard]').click();assert.deepEqual(await page.locator('#layout-tabs button').allTextContents(),['Model']);assert.equal(await page.locator('#empty').isVisible(),false);assert.deepEqual(errors,[]);
   }finally{await app.close();}
 });
 

@@ -73,7 +73,7 @@ test('DXF local: abrir, capas, zoom, PNG y archivo inválido', { timeout: 90000 
       await page.screenshot({ path: 'test-results/dwg.png' });
     }
     assert.deepEqual(errors, []);
-    await page.locator('#clear').click();
+    await page.locator('#clear').click();if(await page.locator('#new-project-dialog').isVisible())await page.locator('[data-new=discard]').click();
     assert.equal(await page.locator('#stat-files').textContent(), '0');
     assert.equal(await page.locator('#prop-format').textContent(), '—');
     assert.equal(await page.locator('#empty').isVisible(), false);

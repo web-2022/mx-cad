@@ -126,7 +126,8 @@ export class BimViewer {
   escape(){this.pointer=undefined;this.clearSelection();this.properties.replaceChildren();this.render();}
   cursorPoint(clientX:number,clientY:number){const r=this.canvas.getBoundingClientRect();if(clientX<r.left||clientX>r.right||clientY<r.top||clientY>r.bottom)return;const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((clientX-r.left)/r.width*2-1,1-(clientY-r.top)/r.height*2),this.camera);const hit=ray.intersectObject(this.root,true).find((h:any)=>h.object.isMesh&&h.object.visible);if(!hit)return;const p=hit.point.clone().sub(this.root.position);return {x:p.x,y:p.y,z:p.z};}
   render(){this.renderer.render(this.scene,this.camera);const inverse=this.camera.quaternion.clone().invert(),axes:any={};for(const [name,v]of [['x',[1,0,0]],['y',[0,1,0]],['z',[0,0,1]]] as const){const p=new T.Vector3(...v).applyQuaternion(inverse);axes[name]={x:p.x,y:p.y};}document.getElementById('viewport')?.dispatchEvent(new CustomEvent('mx:axes',{detail:axes}));}
-  destroy(){
+  mountTools(target:HTMLElement){const panel=this.filter.closest('aside')!;target.replaceChildren(panel);}
+  destroy(){this.filter.closest('aside')?.remove();
     this.observer.disconnect();this.orbit.dispose();this.clearSelection();
     const geometries=new Set<any>(),materials=new Set<any>(),textures=new Set<any>();this.root.traverse((o:any)=>{if(o.geometry)geometries.add(o.geometry);for(const m of(Array.isArray(o.material)?o.material:[o.material]))if(m){materials.add(m);for(const v of Object.values(m))if((v as any)?.isTexture)textures.add(v);}});
     for(const g of geometries)g.dispose();for(const m of materials)m.dispose();for(const t of textures){t.dispose();t.source?.data?.close?.();}this.renderer.dispose();this.renderer.forceContextLoss();this.canvas.remove();
