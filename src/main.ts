@@ -233,7 +233,7 @@ function renderLayers() {
       if(is3D||selectedSheet)sourceStyleDirty=true;
       if(selectedSheet && documentModel)paperView?.setSheet(documentModel,selectedSheet,false);
       if(is3D && documentModel){view3D?.updateVisibility();updateWireInfo();}
-      if(!is3D&&!selectedSheet)tools?.refresh();
+      if(!is3D&&!selectedSheet){tools?.setNavigationMode('select');tools?.refresh();}
     };
     if (layer.name === activeLayer) row.classList.add('active-layer');
     row.append(check, swatch, name); host.append(row);
@@ -450,7 +450,7 @@ project=new ProjectManager({
  selectItem:id=>{if(bim&&'selectItem'in bim)bim.selectItem(id);},
  inspect:()=>{tools?.clearSelection();bim?.escape();},
  space:id=>selectSpace(id),
- layer:(id,name,visible)=>{if(bim&&'setCadLayer'in bim){bim.setCadLayer(id,name,visible);return;}if(!documentModel)return;const mapping=documentModel.metadata.mxSourceLayers as Record<string,{id:string;layer:string;visible:boolean;frozen:boolean}>|undefined;for(const[key,l]of Object.entries(documentModel.layers))if(mapping?mapping[key]?.id===id&&mapping[key]?.layer===name:key===name){if(mapping?.[key]){mapping[key].visible=visible;mapping[key].frozen=false;}const states=documentModel.metadata.mxFileVisibility as Record<string,boolean>|undefined;l.isVisible=visible&&states?.[id]!==false;l.isFrozen=false;}if(view3D)view3D.updateAppearance();else{const state=viewer.renderer.getViewState();viewer.renderer.setDocument(documentModel);viewer.renderer.setViewState(state);}renderLayers();},
+ layer:(id,name,visible)=>{if(bim&&'setCadLayer'in bim){bim.setCadLayer(id,name,visible);return;}if(!documentModel)return;const mapping=documentModel.metadata.mxSourceLayers as Record<string,{id:string;layer:string;visible:boolean;frozen:boolean}>|undefined;for(const[key,l]of Object.entries(documentModel.layers))if(mapping?mapping[key]?.id===id&&mapping[key]?.layer===name:key===name){if(mapping?.[key]){mapping[key].visible=visible;mapping[key].frozen=false;}const states=documentModel.metadata.mxFileVisibility as Record<string,boolean>|undefined;l.isVisible=visible&&states?.[id]!==false;l.isFrozen=false;}if(selectedSheet)paperView?.setSheet(documentModel,selectedSheet,false);else if(is3D)view3D?.updateAppearance();else{const state=viewer.renderer.getViewState();viewer.renderer.setDocument(documentModel);viewer.renderer.setViewState(state);tools?.setNavigationMode('select');tools?.refresh();}renderLayers();},
  fit:id=>{if(bim&&'fitFile'in bim)bim.fitFile(id);else if(view3D)view3D.fitFile(id);else navigationAdapter().fit();},
  open:async(file,companions,state)=>{const revision=fileRevision;await open(file,companions,state);return fileRevision!==revision;},
  capture:()=>{
