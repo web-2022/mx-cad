@@ -139,6 +139,7 @@ export class CadTools {
     const points=this.pending.map(p=>({...p}));const layer=this.layerOptions.activeLayer();if(type!=='MEDICION')this.layerOptions.created(layer);const s:Shape={id:`session-${++this.serial}`,type,layer,points,nodes:points,closed,origin:'Sesión'};
     this.drawings.push(s);this.pending=[];this.select(s);
   }
+  clearSelection(){this.select();this.redraw();}
   selectExternal(s?:Shape){this.select(s);}
   private select(s?:Shape){
     this.selected=s;this.info.replaceChildren();
