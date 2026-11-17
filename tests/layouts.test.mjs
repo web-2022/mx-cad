@@ -29,7 +29,7 @@ test('DXF: separate sheets, paper sizes, viewport hatch islands, layers, local i
       const scale=Math.min(canvas.clientWidth/420,canvas.clientHeight/297)*.88,dpr=canvas.width/canvas.clientWidth,ctx=canvas.getContext('2d');let ink=0;
       for(let x=40;x<100;x+=2)for(let y=44;y<=46;y+=.25){const p=ctx.getImageData(Math.round((canvas.clientWidth/2+(x-210)*scale)*dpr),Math.round((canvas.clientHeight/2-(y-148.5)*scale)*dpr),1,1).data;if(Math.min(p[0],p[1],p[2])<220)ink++;}return ink;
     });assert.ok(dimensionInk>0,'Dimension graphics block must survive paper-space normalization');
-    await page.getByRole('checkbox',{name:'Mostrar capa OCULTA',exact:true}).uncheck();
+    await page.locator('#project-tree').getByRole('button',{name:'▣ layouts.dxf',exact:true}).click();await page.getByRole('checkbox',{name:'Mostrar capa OCULTA',exact:true}).uncheck();
     await page.locator('#reference-input').setInputFiles('tests/fixtures/ref.png');
     await expect(page.locator('#notice')).toContainText('Referencias locales procesadas');
     await page.getByRole('tab',{name:'A4-Detalle',exact:true}).click();assert.match(await page.locator('#paper-info').textContent(),/210\.00 × 297\.00 mm/);

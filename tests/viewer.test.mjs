@@ -32,7 +32,7 @@ test('DXF local: abrir, capas, zoom, PNG y archivo inválido', { timeout: 90000 
     await page.locator('#nav-top').click();
     assert.equal(await page.locator('#viewer').isVisible(),true);
     assert.equal(await page.locator('#view-3d').count(),0);
-    const layer = page.getByRole('checkbox', { name: 'Mostrar capa MUROS', exact: true });
+    await page.locator('#project-tree').getByRole('button',{name:'▣ ejemplo.dxf',exact:true}).click();const layer = page.getByRole('checkbox', { name: 'Mostrar capa MUROS', exact: true });
     await layer.uncheck(); assert.equal(await layer.isChecked(), false); await layer.check();
     const before = await page.locator('#coordinates').textContent(); await page.locator('#plus').click();
     assert.notEqual(await page.locator('#coordinates').textContent(), before);

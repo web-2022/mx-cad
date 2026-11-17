@@ -32,7 +32,7 @@ test('seleccionar, medir con snap, dibujar y exportar trazos', {timeout:90000},a
     await page.mouse.click(v.x+a[0],v.y+a[1]-(b[0]-a[0])*.5);
     assert.match(await page.locator('#selection-info').textContent(),/POINT/);
     assert.match(await page.locator('#selection-info').textContent(),/35/);
-    await page.locator('#new-layer-name').fill('Pruebas');await page.getByRole('button',{name:'Crear capa nueva',exact:true}).click();
+    await page.locator('#project-tree').getByRole('button',{name:'▣ medidas.dxf',exact:true}).click();await page.locator('#new-layer-name').fill('Pruebas');await page.getByRole('button',{name:'Crear capa nueva',exact:true}).click();
     assert.equal(await page.locator('#active-layer').inputValue(),'Pruebas');
     await page.locator('#new-layer-name').fill('pruebas');await page.getByRole('button',{name:'Crear capa nueva',exact:true}).click();
     assert.match(await page.locator('#layer-error').textContent(),/Ya existe/);

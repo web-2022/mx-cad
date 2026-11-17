@@ -15,7 +15,7 @@ test('local GLB, glTF companions and IFC: geometry, properties, visibility, PNG 
     await expect.poll(()=>page.locator('.bim-stage canvas').evaluate(canvas=>{
       const gl=canvas.getContext('webgl2'),pixel=new Uint8Array(4);gl.readPixels(Math.floor(canvas.width/2),Math.floor(canvas.height/2),1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);return pixel[0]>60&&pixel[0]>pixel[1];
     })).toBe(true);
-    await page.getByRole('button',{name:'Triangulo de prueba',exact:true}).click();await expect(page.locator('#bim-properties')).toContainText('Arquitectura');
+    await page.locator('#project-tree').getByRole('button',{name:'▣ model.glb',exact:true}).click();await page.getByRole('button',{name:'Triangulo de prueba',exact:true}).click();await expect(page.locator('#bim-properties')).toContainText('Arquitectura');
     const visible=page.getByRole('checkbox',{name:'Mostrar Triangulo de prueba',exact:true});await visible.uncheck();await visible.check();
     await page.locator('#plus').click();await page.locator('#fit').click();console.log('GLB: geometría renderizada, nombres y propiedades comprobados');
     await mkdir('test-results',{recursive:true});
