@@ -7,6 +7,7 @@ import { combineCad } from './project-cad';
 import type { CadDocument } from './vendor/cad/core/types';
 interface Adapter {
     open(file: File, companions: File[], state: any): Promise<boolean>;
+    context?():{mixed?:any};
     capture(): {
         state: any;
         doc?: CadDocument;
@@ -161,6 +162,7 @@ export class ProjectManager {
         if (e.state?.kind === 'model')
             await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
         await this.adapter.restore(e.state, e.resources);
+        this.adapter.fileVisibility?.(e.id,e.visible);
         this.snapshot();
         this.render();
         return true;
@@ -192,17 +194,18 @@ export class ProjectManager {
         const index = this.entries.findIndex(e => e.id === id);
         if (index < 0)
             return;
-        const wasActive = this.active === id;
+        const wasActive = this.active === id,preserve=this.composite?this.adapter.capture().state:undefined,shared=/\.(dwg|dxf|dm|dmx|csv|txt|tsv)$/i.test(this.entries[index].file.name);
         this.entries.splice(index, 1);
         this.docs.delete(id);
         this.models.delete(id);
         this.infos.delete(id);
-        if (wasActive || this.composite) {
+        if(this.selected===id)this.selected=this.entries[Math.min(index,this.entries.length-1)]?.id;
+        if (wasActive || this.composite&&shared) {
             this.active = undefined;
             this.composite = false;
             if (this.entries.length) {
-                if (this.entries.filter(e => /\.(dwg|dxf|dm|dmx|csv|txt|tsv)$/i.test(e.file.name)).length > 1)
-                    await this.combine();
+                if (this.entries.some(e => /\.(dwg|dxf|dm|dmx|csv|txt|tsv)$/i.test(e.file.name)))
+                    await this.combine(false,undefined,preserve);
                 else
                     await this.select(this.entries[Math.min(index, this.entries.length - 1)].id);
             }
@@ -386,11 +389,12 @@ export class ProjectManager {
         this.reset();
         this.saved = '';
     }
-    private inspect(e: ProjectEntry) { this.adapter.inspect?.(); this.selected = e.id; document.querySelector('.shell')!.classList.add('has-selection'); this.render(); }
-    render() {
+    private inspect(e: ProjectEntry) { this.adapter.inspect?.(); this.selected = e.id; document.querySelector('.shell')!.classList.add('has-selection'); this.render(false); }
+    render(rebuildTree=true) {
         const host = document.getElementById('project-tree')!;
-        host.replaceChildren();
+        if(rebuildTree)host.replaceChildren();
         const button = (text: string, action: () => void) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.disabled = this.busy; b.onclick = action; return b; };
+        if(rebuildTree){
         if (!this.composite && this.entries.length > 1)
             host.append(button('Volver a la escena del proyecto', () => void this.combine()));
         for (const e of this.entries) {
@@ -400,7 +404,7 @@ export class ProjectManager {
             branch.dataset.file = e.id;
             branch.classList.toggle('selected', e.id === this.selected);
             branch.classList.toggle('file-hidden', !e.visible);
-            branch.ontoggle = () => { e.expanded = branch.open; };
+            branch.ontoggle = () => {const changed=e.expanded!==branch.open;e.expanded=branch.open;if(changed&&branch.open){const focused=document.activeElement===summary;this.render();if(focused)document.querySelector<HTMLElement>('[data-file="'+CSS.escape(e.id)+'"]>summary')?.focus({preventScroll:true});}};
             const summary = document.createElement('summary');
             summary.setAttribute('role', 'treeitem');
             summary.setAttribute('aria-selected', String(e.id === this.selected));
@@ -411,8 +415,8 @@ export class ProjectManager {
             visible.setAttribute('aria-label', 'Mostrar archivo ' + (e.label ?? e.file.name));
             visible.onclick = event => event.stopPropagation();
             visible.onchange = () => void this.visibility(e, visible.checked);
-            summary.append(visible, button('▣ ' + (e.label ?? e.file.name), () => this.inspect(e)));
-            branch.append(summary);
+            summary.append(visible, button('▣ ' + (e.label ?? e.file.name), () => this.inspect(e)));if(/\.(ifc|glb|gltf)$/i.test(e.file.name)){const badge=document.createElement('span');badge.className='badge';badge.textContent='Individual';badge.title='Este formato no se superpone con CAD y bloques; abre su vista individual.';summary.append(badge);}
+            branch.append(summary);if(!e.expanded){host.append(branch);continue;}
             const doc = this.docs.get(e.id), model = this.models.get(e.id);
             if (doc) {
                 const section = document.createElement('details');
@@ -491,11 +495,12 @@ export class ProjectManager {
             }
             host.append(branch);
         }
+        }else{for(const branch of host.querySelectorAll<HTMLElement>('[data-file]')){const selected=branch.dataset.file===this.selected;branch.classList.toggle('selected',selected);branch.querySelector('summary')?.setAttribute('aria-selected',String(selected));}}
         const panel = document.getElementById('project-properties')!;
         panel.replaceChildren();
         const selected = this.entries.find(e => e.id === this.selected);
         const tools = document.getElementById('model-tools')!;
-        const scene = this.adapter.capture().state;
+        const scene = this.adapter.context?.()??this.adapter.capture().state;
         tools.hidden = !!selected && selected.id !== (scene?.mixed?.active ?? this.active);
         document.getElementById('cad-edit-tools')!.hidden = this.composite || !!selected && selected.id !== this.active;
         const legacy = document.querySelector<HTMLElement>('.properties>.panel-content');
@@ -507,7 +512,7 @@ export class ProjectManager {
             panel.append(heading);
             const info = document.createElement('p');
             info.textContent = (e.file.name.split('.').pop() ?? '').toUpperCase() + ' · ' + (model?.units ?? doc?.units ?? 'Unidades no declaradas') + ' · ' + (model ? model.count + ' bloques' : doc ? doc.entities.length + ' entidades' : this.infos.has(e.id) ? this.infos.get(e.id).count + ' elementos' : 'Consulta individual') + ' · ' + (e.visible ? 'Visible' : 'Oculto');
-            panel.append(info);
+            panel.append(info);if(doc){const min=doc.header?.EXTMIN??doc.header?.$EXTMIN,max=doc.header?.EXTMAX??doc.header?.$EXTMAX;const xyz=(p:any)=>p&&['x','y','z'].every(k=>Number.isFinite(p[k]))?[p.x,p.y,p.z]:undefined;const a=xyz(min),b=xyz(max),bounds=document.createElement('p');bounds.textContent=a&&b?'Límites XYZ declarados: '+a.join(', ')+' → '+b.join(', '):'Límites XYZ: no disponibles en los metadatos del lector.';panel.append(bounds);}
             const declared = this.infos.get(e.id)?.bounds;
             if (declared) {
                 const bounds = document.createElement('p');
@@ -572,7 +577,7 @@ export class ProjectManager {
         (document.getElementById('project-save') as HTMLButtonElement).disabled = this.busy || !this.entries.length;
         (document.getElementById('project-open') as HTMLButtonElement).disabled = this.busy;
     }
-    entitySelection(detail?:any) {this.selected=this.entries.some(e=>e.id===detail?.fileID)?detail.fileID:undefined;this.render();if(detail){const pre=document.createElement('pre');pre.className='picked-properties';pre.textContent=JSON.stringify({archivo:detail.name,atributos:detail.attributes??{},coordenadasOriginales:detail.worldPoint},null,2);document.getElementById('project-properties')!.append(pre);}}
+    entitySelection(detail?:any) {this.selected=this.entries.some(e=>e.id===detail?.fileID)?detail.fileID:undefined;this.render(false);if(detail){const pre=document.createElement('pre');pre.className='picked-properties';pre.textContent=JSON.stringify({archivo:detail.name,atributos:detail.attributes??{},coordenadasOriginales:detail.worldPoint},null,2);document.getElementById('project-properties')!.append(pre);}}
     private async openSpace(e: ProjectEntry, id: string) { await this.select(e.id); this.adapter.space?.(id); }
     private async appearance(e: ProjectEntry) {
         const state = this.adapter.capture().state;
@@ -584,14 +589,16 @@ export class ProjectManager {
     }
     private async visibility(e: ProjectEntry, visible: boolean) {
         e.visible = visible;
+        if(!this.composite&&this.active&&this.active!==e.id){this.render();return;}
         const state = this.adapter.capture().state;
-        if (this.composite && state?.mixed) {
+        if (this.composite && state?.mixed?.settings[e.id]) {
             state.mixed.settings[e.id].visible = visible;
             await this.adapter.restore(state, []);
             this.compositeState = state;
             this.render();
         }
-        else if (this.composite && this.adapter.fileVisibility?.(e.id, visible)) {
+        else if (this.composite && /\.(ifc|glb|gltf)$/i.test(e.file.name)) {this.render();}
+        else if ((this.composite||this.active===e.id) && this.adapter.fileVisibility?.(e.id, visible)) {
             this.render();
         }
         else if (this.entries.some(x => x.visible)) {

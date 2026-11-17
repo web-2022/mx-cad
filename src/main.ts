@@ -440,7 +440,8 @@ window.addEventListener('pointerdown',e=>{if(viewport.contains(e.target as Node)
 
 el('clear').onclick=()=>void project?.newProject();
 project=new ProjectManager({
- fileVisibility:(id,visible)=>{const mapping=documentModel?.metadata.mxSourceLayers as Record<string,{id:string;visible:boolean;frozen:boolean}>|undefined;if(!mapping||!view3D||!documentModel)return false;const states=(documentModel.metadata.mxFileVisibility??={}) as Record<string,boolean>;states[id]=visible;for(const [key,source]of Object.entries(mapping))if(source.id===id&&documentModel.layers[key]){documentModel.layers[key].isVisible=visible&&source.visible;documentModel.layers[key].isFrozen=source.frozen;}view3D.updateAppearance();return true;},
+ context:()=>({mixed:bim&&'getMixedSession'in bim?bim.getMixedSession():undefined}),
+ fileVisibility:(id,visible)=>{if(bim&&'setFileVisible'in bim){bim.setFileVisible(visible);return true;}const mapping=documentModel?.metadata.mxSourceLayers as Record<string,{id:string;visible:boolean;frozen:boolean}>|undefined;if(!mapping||!view3D||!documentModel)return false;const states=(documentModel.metadata.mxFileVisibility??={}) as Record<string,boolean>;states[id]=visible;for(const [key,source]of Object.entries(mapping))if(source.id===id&&documentModel.layers[key]){documentModel.layers[key].isVisible=visible&&source.visible;documentModel.layers[key].isFrozen=source.frozen;}view3D.updateAppearance();return true;},
  selectItem:id=>{if(bim&&'selectItem'in bim)bim.selectItem(id);},
  inspect:()=>{tools?.escape();bim?.escape();},
  space:id=>selectSpace(id),

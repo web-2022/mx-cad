@@ -30,7 +30,7 @@ export class BimViewer {
     this.scene.add(new T.HemisphereLight(0xffffff,0x596377,2.5));const sun=new T.DirectionalLight(0xffffff,3);sun.position.set(5,10,7);this.scene.add(sun);this.scene.add(this.root);
     this.filter.oninput=()=>this.renderItems();
     this.canvas.onpointerdown=e=>{this.pointer={x:e.clientX,y:e.clientY};};
-    this.canvas.onpointerup=e=>{
+    this.canvas.onpointerup=e=>{if(!this.root.visible)return;
       if(!this.pointer||Math.hypot(e.clientX-this.pointer.x,e.clientY-this.pointer.y)>4)return;
       const r=this.canvas.getBoundingClientRect(),ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1),this.camera);
       const hit=ray.intersectObject(this.root,true).find((h:any)=>{for(let n=h.object;n;n=n.parent)if(!n.visible)return false;return true;});
@@ -125,8 +125,9 @@ export class BimViewer {
   background(light:boolean){this.scene.background=new T.Color(light?'#f4f5f7':'#111d31');this.render();}
   resize(){const w=this.stage.clientWidth,h=this.stage.clientHeight;if(!w||!h)return;this.renderer.setSize(w,h);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();this.render();}
   escape(){this.pointer=undefined;this.clearSelection();this.properties.replaceChildren();this.render();}
-  cursorPoint(clientX:number,clientY:number){const r=this.canvas.getBoundingClientRect();if(clientX<r.left||clientX>r.right||clientY<r.top||clientY>r.bottom)return;const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((clientX-r.left)/r.width*2-1,1-(clientY-r.top)/r.height*2),this.camera);const hit=ray.intersectObject(this.root,true).find((h:any)=>h.object.isMesh&&h.object.visible);if(!hit)return;const p=hit.point.clone().sub(this.root.position);return {x:p.x,y:p.y,z:p.z};}
+  cursorPoint(clientX:number,clientY:number){if(!this.root.visible)return;const r=this.canvas.getBoundingClientRect();if(clientX<r.left||clientX>r.right||clientY<r.top||clientY>r.bottom)return;const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((clientX-r.left)/r.width*2-1,1-(clientY-r.top)/r.height*2),this.camera);const hit=ray.intersectObject(this.root,true).find((h:any)=>h.object.isMesh&&h.object.visible);if(!hit)return;const p=hit.point.clone().sub(this.root.position);return {x:p.x,y:p.y,z:p.z};}
   render(){this.renderer.render(this.scene,this.camera);const inverse=this.camera.quaternion.clone().invert(),axes:any={};for(const [name,v]of [['x',[1,0,0]],['y',[0,1,0]],['z',[0,0,1]]] as const){const p=new T.Vector3(...v).applyQuaternion(inverse);axes[name]={x:p.x,y:p.y};}document.getElementById('viewport')?.dispatchEvent(new CustomEvent('mx:axes',{detail:axes}));}
+  setFileVisible(visible:boolean){this.root.visible=visible;if(!visible)this.escape();this.render();}
   describe(){return{count:this.items.length,bounds:this.sourceBounds,items:this.items.slice(0,500).map(i=>({...i,properties:{...i.properties}}))};}
   selectItem(id:number){this.select(id);}
   mountTools(target:HTMLElement){const panel=this.filter.closest('aside')!;target.replaceChildren(panel);}
