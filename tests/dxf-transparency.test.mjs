@@ -1,0 +1,9 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {dxfOpacity} from '../src/dxf-transparency.ts';
+import {supplementDxf} from '../src/dxf-supplement.ts';
+import {surfacesFromDocument} from '../src/cad-surfaces.ts';
+const groups=(alpha)=>[0,'SECTION',2,'ENTITIES',0,'POLYLINE',5,'A',70,64,440,alpha,0,'VERTEX',70,192,10,500000,20,9000000,30,4800,0,'VERTEX',70,192,10,500010,20,9000000,30,4800,0,'VERTEX',70,192,10,500000,20,9000010,30,4810,0,'VERTEX',70,128,71,1,72,2,73,3,0,'SEQEND',0,'ENDSEC',0,'EOF'].join('\n')+'\n';
+test('DXF explicit alpha endpoints and asymmetric intermediate values are not inverted',()=>{assert.equal(dxfOpacity(0x020000ff),1);assert.equal(dxfOpacity(0x02000000),0);assert.equal(dxfOpacity(0x02000040),64/255);assert.equal(dxfOpacity('33554687'),1);for(const v of [undefined,null,'',NaN,-1,0,0x01000000,0x100000000])assert.equal(dxfOpacity(v),undefined);});
+test('opaque polyface meshes stay visible whether supplemented or created from original records',()=>{for(const existing of [false,true]){const doc={format:'dxf',entities:existing?[{type:'POLYLINE',handle:'A',opacity:0}]:[],layers:{},blocks:{},metadata:{},warnings:[]};supplementDxf(doc,groups(0x020000ff));const s=surfacesFromDocument(doc);assert.equal(s.surfaces.length,1);assert.equal(s.surfaces[0].entity.opacity,1);assert.deepEqual(s.surfaces[0].points[0],{x:500000,y:9000000,z:4800});assert.equal(s.surfaces[0].triangles.length,3);}});
+test('authored transparent polyfaces remain transparent and inherited modes are not forced to zero',()=>{for(const [packed,expected]of [[0x02000000,0],[0x02000040,64/255],[0x01000000,undefined]]){const doc={format:'dxf',entities:[],layers:{},blocks:{},metadata:{},warnings:[]};supplementDxf(doc,groups(packed));assert.equal(doc.entities[0].opacity,expected);}});
