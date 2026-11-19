@@ -149,7 +149,7 @@ function selectSpace(id:string){
 
 
 function controls() {
-  const locked=!!controller||projectBusy;el('viewport').dataset.projectLocked=String(locked);for(const id of ['model-tools','cad-edit-tools'])el(id).inert=locked;document.querySelector<HTMLElement>('.properties')!.inert=locked;
+  const locked=!!controller||projectBusy;el('viewport').dataset.projectLocked=String(locked);el('draw-menu').inert=locked;for(const id of ['model-tools','cad-edit-tools'])el(id).inert=locked;document.querySelector<HTMLElement>('.properties')!.inert=locked;
   if(bimHost)bimHost.inert=locked;
   (document.querySelector('.cad-dock') as HTMLElement | null)?.toggleAttribute('inert', locked);
   document.querySelector<HTMLElement>('.sidebar')!.inert = locked;

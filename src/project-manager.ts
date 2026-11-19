@@ -621,9 +621,9 @@ export class ProjectManager {
             note.textContent = 'El nombre mostrado y la visibilidad son ajustes del proyecto. El archivo original no se modifica. Los controles de filtros pertenecen al modelo activo indicado.';
             panel.append(note);
         }
-        document.getElementById('project-count')!.textContent = String(this.entries.length);
-        document.getElementById('stat-files')!.textContent = String(this.entries.length);
-        document.getElementById('file-count')!.textContent = this.entries.length + ' archivo(s) en proyecto';
+        document.getElementById('project-count')!.textContent = String(this.entries.length+draftStore.files.length);
+        document.getElementById('stat-files')!.textContent = String(this.entries.length+draftStore.files.length);
+        document.getElementById('file-count')!.textContent = (this.entries.length+draftStore.files.length) + ' archivo(s) en proyecto';
         (document.getElementById('project-save') as HTMLButtonElement).disabled = this.busy || !this.entries.length&&!draftStore.files.length;
         (document.getElementById('project-open') as HTMLButtonElement).disabled = this.busy;
         (document.getElementById('save-project-top') as HTMLButtonElement).disabled=(document.getElementById('project-save') as HTMLButtonElement).disabled;
