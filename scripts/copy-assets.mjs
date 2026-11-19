@@ -13,4 +13,7 @@ await mkdir(join(root,'public/licenses'),{recursive:true});
 await cp(join(root,'node_modules/three/LICENSE'),join(root,'public/licenses/three.txt'));
 await cp(join(root,'node_modules/web-ifc/LICENSE.md'),join(root,'public/licenses/web-ifc.txt'));
 
+await cp(join(root,'node_modules/node-unrar-js/LICENSE.md'),join(root,'public/licenses/node-unrar-js.txt'));
+await cp(join(root,'docs/licenses/unrar.txt'),join(root,'public/licenses/unrar.txt'));
+
 await import('./table-reader-assets.mjs');

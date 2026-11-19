@@ -303,7 +303,39 @@ async function open(file: File,companions:File[]=[],state?:any) {
 const input = el<HTMLInputElement>('file-input');
 const selectFile = () => { if (!controller) input.click(); };
 el('open').onclick = selectFile;
-function openFiles(files:File[]){if(files.some(f=>/\.(nwd|nwc|nwf)$/i.test(f.name))){notice('NWD/NWC/NWF no se abren directamente. Convierte el modelo previamente a IFC o GLB/glTF.',true);return;}void project?.add(files);}
+async function openFiles(files:File[]){
+ if(controller||projectBusy)return;
+ if(files.some(f=>/\.rar$/i.test(f.name))){
+  const operation=new AbortController();
+  controller=operation;
+  el('busy').hidden=false;el('progress-text').textContent='Extrayendo RAR en el equipo…';controls();
+  try{
+   const extracted:File[]=[];
+   for(const file of files){
+    if(!/\.rar$/i.test(file.name)){extracted.push(file);continue;}
+    if(file.size>512*1024*1024)throw Error('El archivo comprimido excede 512 MiB.');
+    extracted.push(...await new Promise<File[]>((resolve,reject)=>{
+     const worker=new Worker(new URL('./rar-worker.ts',import.meta.url),{type:'module'});
+     const abort=()=>{cleanup();reject(new DOMException('Cancelado','AbortError'));};
+     const cleanup=()=>{worker.terminate();operation.signal.removeEventListener('abort',abort);};
+     operation.signal.addEventListener('abort',abort,{once:true});
+     worker.onmessage=({data})=>{cleanup();if(data.error)reject(Error(data.error));else resolve(data.files);};
+     worker.onerror=()=>{cleanup();reject(Error('Falló el lector RAR.'));};
+     worker.postMessage(file);
+    }));
+   }
+   files=extracted;
+  }catch(error){
+   notice(operation.signal.aborted?'Apertura cancelada.':`No se pudo abrir el RAR. ${error instanceof Error?error.message:''}`,!operation.signal.aborted);
+   return;
+  }finally{controller=undefined;el('busy').hidden=true;controls();}
+ }
+ if(files.some(f=>/\.(nwd|nwc|nwf)$/i.test(f.name))){
+  notice('NWD/NWC/NWF no se abren directamente. Convierte el modelo previamente a IFC o GLB/glTF.',true);return;
+ }
+ await project?.add(files);
+}
+
 input.onchange = () => { const files=Array.from(input.files??[]);input.value='';if(files.length)openFiles(files); };
 el('cancel').onclick = () => controller?.abort();
 el('plus').onclick=()=>navigation?.change(()=>navigationAdapter().zoom(1.25));el('minus').onclick=()=>navigation?.change(()=>navigationAdapter().zoom(.8));el('fit').onclick=()=>navigation?.change(()=>fitDrawing());

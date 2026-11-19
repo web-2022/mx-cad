@@ -19,3 +19,7 @@ The local modified CAD engine under src/vendor/cad is derived from @flyfish-dev/
 
 - Lector auxiliar de prefijos TABLE: GNU LibreDWG/mlightcad, GPL-3.0, commit `4c9bf7fe2492beaad872c34ee36d810f70fd5f02`. Fuente correspondiente completa: https://github.com/mlightcad/libredwg-web/tree/4c9bf7fe2492beaad872c34ee36d810f70fd5f02 . Se distribuyen JavaScript/WASM verificados por SHA-256; el motor general sigue sin cambios. Aviso en `licenses/table-reader.txt`.
 - La estructura CTB se contrastó con la implementación pública de ezdxf (MIT): https://github.com/mozman/ezdxf/blob/master/src/ezdxf/addons/acadctb.py . El lector TypeScript local usa APIs estándar, sin incorporar una dependencia Python.
+
+## Extracción de archivos RAR
+
+`node-unrar-js` 2.0.2 (MIT, Jianrong Yu) incorpora el lector UnRAR 6.1.7 de Alexander Roshal, compilado a WebAssembly. MX CAD distribuye el lector para extraer archivos localmente. Los textos de licencia se incluyen en `licenses/node-unrar-js.txt` y `licenses/unrar.txt` de la compilación.

@@ -25,7 +25,7 @@ test('seleccionar, medir con snap, dibujar y exportar trazos', {timeout:90000},a
     assert.equal(picked,true);assert.match(await page.locator('#selection-info').textContent(),/100 m/);
     const ends=(await page.locator('.cad-overlay polyline').getAttribute('points')).split(' ').map(pair=>pair.split(',').map(Number));
     const [a,b]=ends;
-    await page.locator('.draft-snap-menu summary').click();
+
     if(await page.locator('#snap-point').getAttribute('aria-pressed')==='false')await page.locator('#snap-point').click();
     await page.locator('#tool-measure').click();
     await page.mouse.click(v.x+a[0]+2,v.y+a[1]-2);await page.mouse.click(v.x+b[0]-2,v.y+b[1]-2);

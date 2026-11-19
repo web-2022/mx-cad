@@ -106,9 +106,31 @@ export class BimViewer {
   private clearSelection(){if(this.helper){this.scene.remove(this.helper);this.helper.geometry.dispose();this.helper.material.dispose();this.helper=undefined;}}
   private select(id:number){
     const item=this.items.find(i=>i.id===id);if(!item)return;this.clearSelection();this.properties.replaceChildren();
-    for(const [key,value]of Object.entries({Tipo:item.type,...item.properties})){const row=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=key;dd.textContent=value;row.append(dt,dd);this.properties.append(row);}
-    const bounds=new T.Box3();for(const mesh of this.meshes.get(id)??[])if(mesh.visible)bounds.union(new T.Box3().setFromObject(mesh));
-    if(!bounds.isEmpty()){this.helper=new T.Box3Helper(bounds,0xf9bc39);this.scene.add(this.helper);}this.render();
+    const objects=(this.meshes.get(id)??[]).filter(mesh=>mesh.visible);
+    const bounds=new T.Box3();
+    for(const mesh of objects)bounds.union(new T.Box3().setFromObject(mesh));
+    const rows:[string,string][]=[['Tipo',item.type]];
+    if(!bounds.isEmpty()){
+      const center=bounds.getCenter(new T.Vector3()).sub(this.root.position);
+      rows.push(['Centro XYZ',center.toArray().map((n:number)=>n.toLocaleString('es-PE',{maximumFractionDigits:4})).join(' / ')]);
+      this.helper=new T.Box3Helper(bounds,0xf9bc39);this.scene.add(this.helper);
+    }
+    const materials=objects.flatMap(mesh=>[mesh.material].flat());
+    const colors=new Set(materials.flatMap(material=>material?.color?['#'+material.color.getHexString()]:[]));
+    if(colors.size)rows.push(['Color',colors.size===1?[...colors][0]:'Varios']);
+    if(objects.length)rows.push(['Representación',objects.every(mesh=>mesh.isLine)?'Líneas':materials.length&&materials.every(material=>material?.wireframe)?'Alámbrico':objects.some(mesh=>mesh.isMesh)?'Superficie':'Puntos']);
+    for(const [key,value] of rows){
+      const row=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');
+      dt.textContent=key;dd.textContent=value;row.append(dt,dd);this.properties.append(row);
+    }
+    const attributes=document.createElement('details'),summary=document.createElement('summary'),list=document.createElement('dl');
+    summary.textContent='Datos del elemento';attributes.append(summary,list);
+    for(const [key,value] of Object.entries(item.properties)){
+      const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=key;dd.textContent=value;list.append(dt,dd);
+    }
+    const row=document.createElement('div'),term=document.createElement('dt'),detail=document.createElement('dd');
+    term.hidden=true;term.textContent='Datos del elemento';detail.append(attributes);row.append(term,detail);this.properties.append(row);
+    this.render();
   }
   getSession(){return{hidden:[...this.meshes].filter(([,meshes])=>meshes.every(m=>!m.visible)).map(([id])=>id)};}
   restoreSession(s:any){if(!Array.isArray(s.hidden)||s.hidden.some((id:any)=>!this.meshes.has(id)))throw Error('Elementos BIM no válidos.');for(const[id,meshes]of this.meshes)for(const m of meshes)m.visible=!s.hidden.includes(id);this.renderItems();this.render();}

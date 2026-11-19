@@ -121,3 +121,7 @@ archivos se seleccionan en la sección Archivos de dibujo de la izquierda; sus
 entidades se seleccionan en pantalla para consultar coordenadas y longitud.
 Escape cancela la operación y limpia la selección conservando los trazos ya
 confirmados. Guarde `.mxproject` para continuar trabajando en otra sesión.
+
+### Archivos RAR
+
+**Cargar archivos** admite RAR con modelos o planos compatibles. La extracción se ejecuta en el equipo mediante WebAssembly. Se admiten hasta 512 MiB por archivo comprimido y por contenido compatible extraído. Los RAR cifrados o de varios volúmenes se deben extraer primero. El límite de guardado de archivos dentro de un proyecto sigue siendo 128 MB.
