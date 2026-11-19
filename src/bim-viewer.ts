@@ -1,3 +1,4 @@
+import {draftProjection,draftCapture} from './three-drafting';
 import * as T from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
@@ -125,7 +126,9 @@ export class BimViewer {
   background(light:boolean){this.scene.background=new T.Color(light?'#f4f5f7':'#111d31');this.render();}
   resize(){const w=this.stage.clientWidth,h=this.stage.clientHeight;if(!w||!h)return;this.renderer.setSize(w,h);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();this.render();}
   escape(){this.pointer=undefined;this.clearSelection();this.properties.replaceChildren();this.render();}
-  cursorPoint(clientX:number,clientY:number){if(!this.root.visible)return;const r=this.canvas.getBoundingClientRect();if(clientX<r.left||clientX>r.right||clientY<r.top||clientY>r.bottom)return;const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((clientX-r.left)/r.width*2-1,1-(clientY-r.top)/r.height*2),this.camera);const hit=ray.intersectObject(this.root,true).find((h:any)=>h.object.isMesh&&h.object.visible);if(!hit)return;const p=hit.point.clone().sub(this.root.position);return {x:p.x,y:p.y,z:p.z};}
+  draftProject(p:{x:number;y:number;z:number}){return draftProjection(this.camera,this.canvas,[-this.root.position.x,-this.root.position.y,-this.root.position.z],p);}
+ draftCapture(x:number,y:number,mode:string,z:number){return draftCapture(this.camera,this.canvas,this.scene,[-this.root.position.x,-this.root.position.y,-this.root.position.z],x,y,mode,z);}
+ cursorPoint(clientX:number,clientY:number){if(!this.root.visible)return;const r=this.canvas.getBoundingClientRect();if(clientX<r.left||clientX>r.right||clientY<r.top||clientY>r.bottom)return;const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((clientX-r.left)/r.width*2-1,1-(clientY-r.top)/r.height*2),this.camera);const hit=ray.intersectObject(this.root,true).find((h:any)=>h.object.isMesh&&h.object.visible);if(!hit)return;const p=hit.point.clone().sub(this.root.position);return {x:p.x,y:p.y,z:p.z};}
   render(){this.renderer.render(this.scene,this.camera);const inverse=this.camera.quaternion.clone().invert(),axes:any={};for(const [name,v]of [['x',[1,0,0]],['y',[0,1,0]],['z',[0,0,1]]] as const){const p=new T.Vector3(...v).applyQuaternion(inverse);axes[name]={x:p.x,y:p.y};}document.getElementById('viewport')?.dispatchEvent(new CustomEvent('mx:axes',{detail:axes}));}
   setFileVisible(visible:boolean){this.root.visible=visible;if(!visible)this.escape();this.render();}
   describe(){return{count:this.items.length,bounds:this.sourceBounds,items:this.items.slice(0,500).map(i=>({...i,properties:{...i.properties}}))};}

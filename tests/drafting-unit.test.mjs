@@ -1,0 +1,10 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import ts from 'typescript';
+import {readFileSync} from 'node:fs';
+const js=ts.transpileModule(readFileSync('src/drafting-data.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022}}).outputText;
+const {validateDrafts,draftDxf}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const file={id:'drawing',name:'Drawing.dxf',visible:true,entities:[{id:'p',type:'POINT',points:[{x:350000,y:8400000,z:4500}]},{id:'l',type:'LINE',points:[{x:350000,y:8400000,z:4500},{x:350010,y:8400020,z:4510}]}]};
+test('drafts preserve full precision world coordinates and point/line types',()=>assert.deepEqual(validateDrafts(JSON.parse(JSON.stringify([file]))),[file]));
+test('draft DXF contains real POINT and LINE including Z',()=>{const d=draftDxf(file);assert.match(d,/0\nPOINT\n8\nMX_DIBUJO\n10\n350000\n20\n8400000\n30\n4500/);assert.match(d,/11\n350010\n21\n8400020\n31\n4510/);});
+test('malformed drafts, duplicate files and nonfinite coordinates are rejected',()=>{assert.throws(()=>validateDrafts([file,file]));assert.throws(()=>validateDrafts([{...file,entities:[{id:'x',type:'LINE',points:[{x:1,y:2,z:3}]}]}]));assert.throws(()=>validateDrafts([{...file,entities:[{id:'x',type:'POINT',points:[{x:Infinity,y:0,z:0}]}]}]));});

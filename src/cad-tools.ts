@@ -94,6 +94,7 @@ export class CadTools {
     if(!found&&this.snapLine)for(const s of candidates)for(const [a,b]of this.edges(s)){const q=closest(p,a,b),d=distance(p,q);if(d<best){best=d;found=q;}}
     if(found){this.snapped=found;return {...found};}return {...p,z:this.spatial()?undefined:0};
   }
+  draftCapture(x:number,y:number,mode:string,z:number){const r=this.viewer.canvas.getBoundingClientRect(),p=this.viewer.renderer.screenToWorld({x:x-r.left,y:y-r.top});if(mode==='none')return {...drawingPoint(p,this.viewer.renderer.getSourceDocument()),z};let best=this.tolerance(),found:Point|undefined;for(const s of this.candidates(p,best)){if(mode==='point'){for(const n of s.nodes){const d=distance(p,n);if(d<best){best=d;found=n;}}}else if(mode==='line'){for(const[a,b]of this.edges(s)){const q=closest(p,a,b),d=distance(p,q);if(d<best){best=d;found=q;}}}else if(mode==='face'&&s.closed&&contains(p,s)){found=p;break;}}if(!found)return;const q=drawingPoint(found,this.viewer.renderer.getSourceDocument());return{x:q.x,y:q.y,z:q.z??z};}
   setNavigationMode(mode:'select'|'pan'){this.setMode(mode);}
   getNavigationMode(){return this.mode;}
   private edges(s:Shape){let e=this.edgeCache.get(s);if(!e){e=segments(s);this.edgeCache.set(s,e);}return e;}

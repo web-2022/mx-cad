@@ -1,3 +1,4 @@
+import {draftStore,validateDrafts} from './drafting-data';
 import type { Blocks } from './block-data';
 import type { MixedInput } from './mixed-types';
 import { readProject, writeProject, modelFile, type ProjectEntry } from './project-data';
@@ -47,6 +48,7 @@ export class ProjectManager {
     constructor(private adapter: Adapter) {
         document.getElementById('project-menu')!.onclick = () => { if(this.busy)return;this.render(); (document.getElementById('project-dialog') as HTMLDialogElement).showModal(); };
         document.getElementById('project-close')!.onclick = () => this.close();
+        window.addEventListener('mx:draftchange',()=>this.render(false));
         document.getElementById('project-save')!.onclick = () => void this.save();
         document.getElementById('project-open')!.onclick = () => { this.close(); document.getElementById('project-input')!.click(); };
         (document.getElementById('project-input') as HTMLInputElement).onchange = e => {
@@ -91,7 +93,8 @@ export class ProjectManager {
             e.resources.push(file);
         }
     }
-    reset() { this.entries = []; this.active = undefined; this.selected = undefined; this.composite = false; this.compositeState = null; this.docs.clear(); this.models.clear(); this.infos.clear(); this.render(); }
+    reset() { draftStore.files=[];window.dispatchEvent(new Event('mx:drafts-restored'));
+        this.entries = []; this.active = undefined; this.selected = undefined; this.composite = false; this.compositeState = null; this.docs.clear(); this.models.clear(); this.infos.clear(); this.render(); }
     async add(files: File[]) {
         if (this.busy)
             return;
@@ -122,7 +125,7 @@ export class ProjectManager {
             for (const file of models) {
                 const e: ProjectEntry = { id: crypto.randomUUID(), file, companions: files.filter(f => !modelFile(f.name)), resources: [], state: null, visible: true, opacity: 1 };
                 this.entries.push(e);
-                if (!await this.activate(e)) {
+                if (e&&!await this.activate(e)) {
                     this.entries = this.entries.filter(x => x !== e);
                 }else added.push(e);
             }
@@ -277,13 +280,13 @@ export class ProjectManager {
         void this.combine(false, id, state);
     }
     private async save() {
-        if (this.busy || !this.entries.length)
+        if (this.busy || (!this.entries.length&&!draftStore.files.length))
             return;
         this.busy = true;
         this.snapshot();
         this.render();
         try {
-            const text = await writeProject(this.entries, this.active, this.adapter.light(), this.composite, this.composite ? this.compositeState : null, { selected: this.selected, rightCollapsed: document.querySelector('.shell')!.classList.contains('right-collapsed'), leftCollapsed: document.querySelector('.shell')!.classList.contains('left-collapsed') }), url = URL.createObjectURL(new Blob([text], { type: 'application/json' })), a = document.createElement('a');
+            const text = await writeProject(this.entries, this.active, this.adapter.light(), this.composite, this.composite ? this.compositeState : null, { drawings: draftStore.files, selected: this.selected??null, rightCollapsed: document.querySelector('.shell')!.classList.contains('right-collapsed'), leftCollapsed: document.querySelector('.shell')!.classList.contains('left-collapsed') }), url = URL.createObjectURL(new Blob([text], { type: 'application/json' })), a = document.createElement('a');
             a.href = url;
             a.download = 'proyecto.mxproject';
             a.click();
@@ -313,6 +316,7 @@ export class ProjectManager {
             if (file.size > 192 * 1024 * 1024)
                 throw Error('Proyecto demasiado grande.');
             const p = await readProject(await file.text());
+            const restoredDrafts=validateDrafts(p.ui?.drawings??[]);
             this.entries = p.entries;
             this.active = undefined;
             this.docs = new Map();
@@ -321,7 +325,8 @@ export class ProjectManager {
             this.composite = false;
             const e = this.entries.find(e => e.id === p.active) ?? this.entries[0];
             viewChanged = true;
-            if (!await this.activate(e))
+            if(!e)this.adapter.clear();
+            if (e&&!await this.activate(e))
                 throw Error('No se pudo abrir el archivo activo del proyecto.');
             this.selected = this.entries.some(x => x.id === p.ui?.selected) ? p.ui.selected : this.active;
             if (this.selected)
@@ -337,6 +342,7 @@ export class ProjectManager {
                 if (this.composite && p.combinedState)
                     await this.adapter.restore(p.combinedState, []);
             }
+            draftStore.files=restoredDrafts;window.dispatchEvent(new Event('mx:drafts-restored'));
             this.saved = this.fingerprint();
         }
         catch (error) {
@@ -373,9 +379,9 @@ export class ProjectManager {
             this.render();
         }
     }
-    private fingerprint() { this.snapshot(); return JSON.stringify(this.entries.map(e => ({ id: e.id, label: e.label, visible: e.visible, opacity: e.opacity, color: e.color, state: e.state }))); }
+    private fingerprint() { this.snapshot(); return JSON.stringify([draftStore.files,this.entries.map(e => ({ id: e.id, label: e.label, visible: e.visible, opacity: e.opacity, color: e.color, state: e.state }))]); }
     private async confirmReplace() {
-        if (!this.entries.length || this.fingerprint() === this.saved)
+        if ((!this.entries.length&&!draftStore.files.length) || this.fingerprint() === this.saved)
             return true;
         const dialog = document.getElementById('new-project-dialog') as HTMLDialogElement;
         const action = await new Promise<string>(resolve => {
@@ -618,8 +624,10 @@ export class ProjectManager {
         document.getElementById('project-count')!.textContent = String(this.entries.length);
         document.getElementById('stat-files')!.textContent = String(this.entries.length);
         document.getElementById('file-count')!.textContent = this.entries.length + ' archivo(s) en proyecto';
-        (document.getElementById('project-save') as HTMLButtonElement).disabled = this.busy || !this.entries.length;
+        (document.getElementById('project-save') as HTMLButtonElement).disabled = this.busy || !this.entries.length&&!draftStore.files.length;
         (document.getElementById('project-open') as HTMLButtonElement).disabled = this.busy;
+        (document.getElementById('save-project-top') as HTMLButtonElement).disabled=(document.getElementById('project-save') as HTMLButtonElement).disabled;
+        (document.getElementById('open-project-top') as HTMLButtonElement).disabled=this.busy;
     }
     entitySelection(detail?: any) { this.selected = this.entries.some(e => e.id === detail?.fileID) ? detail.fileID : undefined; this.render(false); if (detail) {
         const pre = document.createElement('pre');

@@ -97,3 +97,27 @@ La vista 3D renderiza caras compatibles con WebGL2 y permite elegir sombreado, a
 ## Modelos de bloques Datamine
 
 Lectura local de DM heredado compatible, bloques GPU con dimensiones reales, filtros AND/OR, leyendas editables/reutilizables, cortes, selección y exportación CSV/JSON/PNG. CSV/texto tiene asistente y se distingue del formato nativo. Consulta [guía, formatos y limitaciones](docs/block-models.md). DMX y variantes no verificadas no se anuncian como compatibles.
+
+### Archivos de dibujo y proyecto portátil
+
+La barra superior permite guardar y abrir `.mxproject`. Estos paquetes incluyen
+copias de los archivos importados, referencias y ajustes, además de los archivos
+de dibujo nuevos. El límite de archivos originales sigue siendo 128 MiB. También
+se admite un proyecto que contenga únicamente dibujos nuevos.
+
+En **Dibujar**, Punto y Línea permiten marcar posiciones en Model o en una vista
+espacial. **Ingresar coordenadas** acepta Este=X, Norte=Y y Elevación=Z en las
+unidades del dibujo, sin transformación geográfica automática. Sin snap se usa
+el plano XY a la elevación indicada. En 3D, Cara requiere una intersección real;
+Puntos y Línea capturan vértices y aristas de la cara triangular bajo el cursor,
+dentro de una tolerancia de pantalla. No se inventa una posición cuando falta
+una captura. Las presentaciones de papel no admiten este dibujo espacial.
+
+**Nuevo archivo de dibujo** crea un archivo independiente y **Guardar dibujo
+DXF** descarga sus puntos y líneas con sus coordenadas originales. Son trazos
+superpuestos en el visor, no modificaciones del DWG ni sólidos nuevos; el snap
+a arista puede incluir diagonales de triangulación. No es escritura DWG. Los
+archivos se seleccionan en la sección Archivos de dibujo de la izquierda; sus
+entidades se seleccionan en pantalla para consultar coordenadas y longitud.
+Escape cancela la operación y limpia la selección conservando los trazos ya
+confirmados. Guarde `.mxproject` para continuar trabajando en otra sesión.

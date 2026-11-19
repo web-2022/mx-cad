@@ -1,3 +1,4 @@
+import {installDrafting} from './drafting';
 import type {MixedInput} from './mixed-types';
 import {validateProjectView} from './project-view';
 import {ProjectManager} from './project-manager';
@@ -493,3 +494,13 @@ project=new ProjectManager({
  },
  clear:()=>clearWorkspace(),notice,light:()=>document.querySelector('.shell')!.classList.contains('light-view'),background:setBackground
 });
+
+installDrafting({
+ enabled:()=>!controller&&!projectBusy&&!selectedSheet&&!el('viewport').classList.contains('file-view-hidden'),
+ project:p=>{const view=bim??(is3D?view3D:undefined);if(view)return view.draftProject(p);const m=documentModel?.savedView?.sceneTransform;let q={...p};if(m&&documentModel?.metadata.sceneTransformApplied!==true&&documentModel?.savedView?.sceneTransformApplied!==false)q={x:m.a*p.x+m.c*p.y+m.e,y:m.b*p.x+m.d*p.y+m.f,z:p.z};const a=viewer.renderer.worldToScreen(q),r=viewer.canvas.getBoundingClientRect();return{x:a.x+r.left,y:a.y+r.top};},
+ capture:(x,y,mode,z)=>{const view=bim??(is3D?view3D:undefined);if(view)return view.draftCapture(x,y,mode,z);return tools!.draftCapture(x,y,mode,z);}
+});
+const drawMenu=el('draw-menu') as HTMLDetailsElement;drawMenu.addEventListener('pointerenter',()=>drawMenu.open=true);drawMenu.addEventListener('pointerleave',()=>{if(!drawMenu.contains(document.activeElement))drawMenu.open=false;});
+el('save-project-top').onclick=()=>el('project-save').click();el('open-project-top').onclick=()=>el('project-open').click();
+
+viewport.addEventListener('mx:draftselect',()=>{tools?.clearSelection();bim?.escape();view3D?.escape();project?.entitySelection();});
