@@ -13,7 +13,7 @@ test('drawing files, coordinates, selection, DXF and self-contained project roun
  const raw=await downloadText(app,page,'#save-project-top','draft-only.mxproject'),p=JSON.parse(raw);assert.equal(p.ui.drawings[0].entities.length,2);assert.equal(p.ui.drawings[0].entities[1].points[1].x,13);
  await page.reload();await page.locator('#project-input').setInputFiles({name:'drawing.mxproject',mimeType:'application/json',buffer:Buffer.from(raw)});await expect(page.locator('#drawing-files')).toContainText('(2)');await page.locator('#drawing-files button').click();await expect(page.locator('#draft-properties')).toContainText('Archivo de dibujo');const dxf=await downloadText(app,page,'#draft-properties button','draft-only.dxf');assert.match(dxf,/0\nPOINT\n/);assert.match(dxf,/0\nLINE\n/);
  // Loaded CAD data must survive independently of any original disk path.
- const fixture=Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\n0\n10\n0\n20\n0\n30\n0\n11\n50\n21\n50\n31\n0\n0\nENDSEC\n0\nEOF\n');await expect(page.locator('#open')).toBeEnabled();await page.locator('#file-input').setInputFiles({name:'source.dxf',mimeType:'application/dxf',buffer:fixture});await expect(page.locator('#open')).toBeEnabled();await expect(page.locator('#project-tree')).toContainText('source.dxf');const raw2=await downloadText(app,page,'#save-project-top','draft-source.mxproject'),p2=JSON.parse(raw2);assert.equal(Buffer.from(p2.assets[0].data,'base64').toString(),fixture.toString());assert.equal(p2.ui.drawings[0].entities.length,2);await page.reload();await page.locator('#project-input').setInputFiles({name:'full.mxproject',mimeType:'application/json',buffer:Buffer.from(raw2)});await expect(page.locator('#project-tree')).toContainText('source.dxf');await expect(page.locator('#drawing-files')).toContainText('(2)');await expect(page.locator('#open')).toBeEnabled();const point=await page.locator('.draft-overlay circle').boundingBox();await page.locator('#drawing-files button').first().click();await page.locator('#draw-menu').hover();await page.locator('#draw-line').click();await page.locator('#draw-menu').hover();await page.locator('#draft-snap').selectOption('point');await page.mouse.move(10,200);await page.mouse.click(point.x+point.width/2,point.y+point.height/2);await page.locator('#draw-menu').hover();await page.locator('#draft-snap').selectOption('none');await page.mouse.move(10,200);await page.mouse.click(point.x+point.width/2+45,point.y+point.height/2+45);await expect(page.locator('#drawing-files')).toContainText('(3)');assert.deepEqual(errors,[]);
+ const fixture=Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\n0\n10\n0\n20\n0\n30\n0\n11\n50\n21\n50\n31\n0\n0\nENDSEC\n0\nEOF\n');await expect(page.locator('#open')).toBeEnabled();await page.locator('#file-input').setInputFiles({name:'source.dxf',mimeType:'application/dxf',buffer:fixture});await expect(page.locator('#open')).toBeEnabled();await expect(page.locator('#project-tree')).toContainText('source.dxf');const raw2=await downloadText(app,page,'#save-project-top','draft-source.mxproject'),p2=JSON.parse(raw2);assert.equal(Buffer.from(p2.assets[0].data,'base64').toString(),fixture.toString());assert.equal(p2.ui.drawings[0].entities.length,2);await page.reload();await page.locator('#project-input').setInputFiles({name:'full.mxproject',mimeType:'application/json',buffer:Buffer.from(raw2)});await expect(page.locator('#project-tree')).toContainText('source.dxf');await expect(page.locator('#drawing-files')).toContainText('(2)');await expect(page.locator('#open')).toBeEnabled();const point=await page.locator('.draft-overlay:not(.draft-aids) circle').boundingBox();await page.locator('#drawing-files button').first().click();await page.locator('#draw-menu').hover();await page.locator('#draw-line').click();await page.locator('.draft-snap-menu summary').click();await page.locator('#snap-point').click();await page.mouse.move(10,200);await page.mouse.click(point.x+point.width/2,point.y+point.height/2);await page.locator('#snap-point').click();await page.mouse.move(10,200);await page.mouse.click(point.x+point.width/2+45,point.y+point.height/2+45);await expect(page.locator('#drawing-files')).toContainText('(3)');assert.deepEqual(errors,[]);
  }finally{await browser?.close();await app?.close();}
 });
 
@@ -22,7 +22,43 @@ test('3D face drawing preserves elevation, supports click points and selects pro
  const app=browser?undefined:await electron.launch({args:['.','--enable-unsafe-swiftshader'],env:{...process.env,MX_CAD_TEST:'1',MX_CAD_BENCHMARK:'1'}});
  try{const page=browser?await browser.newPage({viewport:{width:1500,height:950}}):await app.firstWindow();if(browser)await page.goto((process.env.MX_DWG_URL??'http://127.0.0.1:4173/')+'?benchmark=1');else await page.setViewportSize({width:1500,height:950});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  const out=[0,'SECTION',2,'ENTITIES'];for(const face of [[[0,0,0],[10,0,0],[0,10,0]],[[0,0,0],[0,0,10],[10,0,0]],[[0,0,0],[0,10,0],[0,0,10]],[[10,0,0],[0,0,10],[0,10,0]]]){out.push(0,'3DFACE',8,'0');face.concat([face[2]]).forEach((p,i)=>out.push(10+i,p[0]+350000,20+i,p[1]+8400000,30+i,p[2]+4500));}out.push(0,'ENDSEC',0,'EOF');await page.locator('#file-input').setInputFiles({name:'solid.dxf',mimeType:'application/dxf',buffer:Buffer.from(out.join('\n')+'\n')});await expect(page.locator('#viewer-3d')).toBeVisible();await expect(page.locator('#open')).toBeEnabled();
- await page.locator('#draw-menu').hover();await page.locator('#draw-point').click();await page.locator('#draw-menu').hover();await page.locator('#draft-snap').selectOption('face');await page.mouse.move(10,200);const canvas=page.locator('#viewer-3d canvas'),box=await canvas.boundingBox();const hit=await page.evaluate(()=>window.mxCadBenchmark.cad3D().draftProject({x:350003,y:8400003,z:4504}));await page.mouse.click(hit.x,hit.y);await expect(page.locator('#drawing-files')).toContainText('(1)');await expect(page.locator('#draft-properties')).toContainText('Elevación 45');await page.keyboard.press('Escape');const circle=page.locator('.draft-overlay circle');await circle.click();await expect(page.locator('#draft-properties')).toContainText('Punto');
+ await page.locator('#draw-menu').hover();await page.locator('#draw-point').click();await page.locator('.draft-snap-menu summary').click();await page.locator('#draft-snap-face').click();await page.mouse.move(10,200);const canvas=page.locator('#viewer-3d canvas'),box=await canvas.boundingBox();const hit=await page.evaluate(()=>window.mxCadBenchmark.cad3D().draftProject({x:350003,y:8400003,z:4504}));await page.mouse.click(hit.x,hit.y);await expect(page.locator('#drawing-files')).toContainText('(1)');await expect(page.locator('#draft-properties')).toContainText('Elevación 45');await page.keyboard.press('Escape');const circle=page.locator('.draft-overlay:not(.draft-aids) circle');await circle.click();await expect(page.locator('#draft-properties')).toContainText('Punto');
  const raw=await downloadText(app,page,'#save-project-top','draft-solid.mxproject');const p=JSON.parse(raw),v=p.ui.drawings[0].entities[0].points[0];assert.ok(v.x>=350000&&v.x<=350010);assert.ok(v.y>=8400000&&v.y<=8400010);assert.ok(v.z>=4500&&v.z<=4510);assert.deepEqual(errors,[]);
+ }finally{await browser?.close();await app?.close();}
+});
+
+test('DXF selection excludes other entities and visible scope excludes hidden drawing files',{timeout:90000},async()=>{
+ const browser=process.env.MX_BLOCK_BROWSER?await chromium.launch({executablePath:process.env.MX_BLOCK_BROWSER,headless:true,args:['--no-sandbox','--enable-unsafe-swiftshader','--disable-dev-shm-usage']}):undefined;
+ const app=browser?undefined:await electron.launch({args:['.','--enable-unsafe-swiftshader'],env:{...process.env,MX_CAD_TEST:'1',MX_CAD_BENCHMARK:'1'}});
+ try{
+  const page=browser?await browser.newPage({viewport:{width:1500,height:950}}):await app.firstWindow();
+  if(browser)await page.goto((process.env.MX_DWG_URL??'http://127.0.0.1:4173/')+'?benchmark=1');
+  else await page.setViewportSize({width:1500,height:950});
+  const base={x:0,y:0,z:30};
+  const drawings=[
+   {id:'active',name:'Activo.dxf',visible:true,entities:[
+    {id:'p',type:'POINT',points:[base],color:'#123456'},
+    {id:'l',type:'LINE',points:[{x:30,y:-20,z:40},{x:55,y:-40,z:45}],lineweight:35}]},
+   {id:'hidden',name:'Oculto.dxf',visible:false,entities:[{id:'h',type:'POINT',points:[base]}]}
+  ];
+  const project={format:'mx-cad-project',version:2,entries:[],assets:[],ui:{drawings,activeDrawing:'active'}};
+  await page.locator('#project-input').setInputFiles({name:'scopes.mxproject',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(project))});
+  await expect(page.locator('#drawing-files')).toContainText('Activo · Activo.dxf');
+  const point=page.locator('.draft-overlay:not(.draft-aids) circle');
+  await point.click();
+  await page.locator('#dxf-menu summary').click();await page.locator('#dxf-selection').click();
+  const modal=page.locator('dialog[open]');
+  await expect(modal).toContainText('1 entidades');
+  const {default:DxfParser}=await import('dxf-parser');
+  const selection=new DxfParser().parseSync(await downloadText(app,page,'dialog[open] button[value=export]','scope-selection.dxf'));
+  assert.deepEqual(selection.entities.map(e=>e.type),['POINT']);
+  assert.deepEqual(selection.entities[0].position,base);
+  assert.equal(selection.entities[0].color,0x123456);
+  await page.locator('#dxf-menu summary').click();await page.locator('#dxf-visible').click();
+  await expect(modal).toContainText('2 entidades');
+  await expect(modal).not.toContainText('Oculto.dxf');
+  const visible=new DxfParser().parseSync(await downloadText(app,page,'dialog[open] button[value=export]','scope-visible.dxf'));
+  assert.deepEqual(visible.entities.map(e=>e.type),['POINT','LINE']);
+  assert.equal(visible.entities[1].lineweight,35);
  }finally{await browser?.close();await app?.close();}
 });

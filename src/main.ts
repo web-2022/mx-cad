@@ -1,3 +1,4 @@
+import {cadDxfSources} from './cad-dxf-scope';
 import {installDrafting} from './drafting';
 import type {MixedInput} from './mixed-types';
 import {validateProjectView} from './project-view';
@@ -495,12 +496,44 @@ project=new ProjectManager({
  clear:()=>clearWorkspace(),notice,light:()=>document.querySelector('.shell')!.classList.contains('light-view'),background:setBackground
 });
 
+const projectDraftPoint = (p:import('./drafting-data').DraftPoint)=>{const view=bim??(is3D?view3D:undefined);if(view)return view.draftProject(p);const m=documentModel?.savedView?.sceneTransform;let q={...p};if(m&&documentModel?.metadata.sceneTransformApplied!==true&&documentModel?.savedView?.sceneTransformApplied!==false)q={x:m.a*p.x+m.c*p.y+m.e,y:m.b*p.x+m.d*p.y+m.f,z:p.z};const a=viewer.renderer.worldToScreen(q),r=viewer.canvas.getBoundingClientRect();return{x:a.x+r.left,y:a.y+r.top};};
+const draftVisibleCad=(entity:import('./vendor/cad/core/types').CadEntity)=>{
+ const layer=documentModel?.layers[entity.layer??'0'];
+ return !viewport.classList.contains('file-view-hidden')&&entity.isVisible!==false&&layer?.isVisible!==false&&!layer?.isFrozen&&
+  (!is3D||currentCad3D()?.isDraftEntityVisible(entity)!==false);
+};
+const draftingCadFiles=()=>bim&&'draftCadFiles' in bim
+ ? bim.draftCadFiles().map(file=>({
+  doc:file.doc,name:file.name,visible:(e:import('./vendor/cad/core/types').CadEntity)=>e.isVisible!==false&&file.visible(e.layer??'0')
+ }))
+ : documentModel?[{doc:documentModel,name:currentName,visible:draftVisibleCad}]:[];
 installDrafting({
+ otherFiles:()=>project.visibleFileNames(),
+ selectCad:p=>tools?.selectAt(p.x,p.y),
  enabled:()=>!controller&&!projectBusy&&!selectedSheet&&!el('viewport').classList.contains('file-view-hidden'),
- project:p=>{const view=bim??(is3D?view3D:undefined);if(view)return view.draftProject(p);const m=documentModel?.savedView?.sceneTransform;let q={...p};if(m&&documentModel?.metadata.sceneTransformApplied!==true&&documentModel?.savedView?.sceneTransformApplied!==false)q={x:m.a*p.x+m.c*p.y+m.e,y:m.b*p.x+m.d*p.y+m.f,z:p.z};const a=viewer.renderer.worldToScreen(q),r=viewer.canvas.getBoundingClientRect();return{x:a.x+r.left,y:a.y+r.top};},
+ project:projectDraftPoint,
+ cadSources:(scope,selected,inFrame)=>{
+  const native=tools?.selectedEntity();
+  const entities=new Set(selected);
+  if(native&&draftVisibleCad(native)&&!selected.size){
+   const original=documentModel?.entities.find(e=>e===native||!!e.handle&&e.handle===native.handle);
+   if(original)entities.add(original);
+  }
+  const results=draftingCadFiles().map(file=>cadDxfSources(file.doc,file.name,entities,scope,projectDraftPoint,inFrame,file.visible));
+  return {sources:results.flatMap(result=>result.sources),warnings:[...new Set(results.flatMap(result=>result.warnings))]};
+ },
+ cadShapes:()=>draftingCadFiles().flatMap(file=>
+  shapesFromDocument(file.doc,{world3D:true}).flatMap(shape=>
+   shape.entity&&file.visible(shape.entity)&&(!shape.rootEntity||file.visible(shape.rootEntity))
+    ?[{entity:shape.rootEntity??shape.entity,closed:shape.closed,points:shape.points.map(p=>({x:p.x,y:p.y,z:p.z??0}))}]
+    :[]
+  )
+ ),
  capture:(x,y,mode,z)=>{const view=bim??(is3D?view3D:undefined);if(view)return view.draftCapture(x,y,mode,z);return tools!.draftCapture(x,y,mode,z);}
 });
 const drawMenu=el('draw-menu') as HTMLDetailsElement;drawMenu.addEventListener('pointerenter',()=>drawMenu.open=true);drawMenu.addEventListener('pointerleave',()=>{if(!drawMenu.contains(document.activeElement))drawMenu.open=false;});
 el('save-project-top').onclick=()=>el('project-save').click();el('open-project-top').onclick=()=>el('project-open').click();
 
 viewport.addEventListener('mx:draftselect',()=>{tools?.clearSelection();bim?.escape();view3D?.escape();project?.entitySelection();});
+
+viewport.addEventListener('mx:draftwindow',()=>tools?.clearSelection());

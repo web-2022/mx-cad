@@ -50,6 +50,9 @@ export class CadGpuView {
  }
  setVisible(visible:boolean){if(!visible){this.selected=undefined;this.isolated=undefined;this.highlight();(this.panel.querySelector('#surface-isolate') as HTMLInputElement).checked=false;}this.panel.hidden=!visible;this.propertiesButton.hidden=!visible;}
  private shape(s:Surface):Shape{return{id:s.id,type:s.entity.type,layer:s.layer,entity:s.entity,points:[],nodes:s.points.slice(0,12),closed:false,origin:'Plano'};}
+ isDraftEntityVisible(entity:import('./vendor/cad/core/types').CadEntity){
+  return this.isolated===undefined||this.surfaces.some((surface,i)=>surface.entity===entity&&this.visible(i));
+ }
  private visible(i:number){const s=this.surfaces[i],layer=this.doc?.layers[s.layer];return (this.isolated===undefined||this.components[i]===this.isolated)&&s.entity.isVisible!==false&&layer?.isVisible!==false&&!layer?.isFrozen;}
  private style(s:Surface){return s.parent?applyByBlockColorInheritance(s.entity.layer===s.layer?s.entity:{...s.entity,layer:s.layer},s.parent,this.doc,{colorMode:'source'}):s.entity;}
  setDocument(doc:CadDocument,fit=true){

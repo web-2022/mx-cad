@@ -7,7 +7,7 @@ import { colorFromAci } from './vendor/cad/index';
 import { closest, contains, distance, metrics, segments, shapesFromDocument, validPolygon, type Point, type Shape } from './geometry';
 
 type Mode='select'|'pan'|'measure'|'angle'|'angle-lines'|'line'|'polygon';
-const instructions:Record<Mode,string>={angle:'Ángulo XY: marca extremo, vértice y extremo. Esc limpia.', 'angle-lines':'Ángulo XY: selecciona dos líneas. Esc limpia.',select:'Haz clic en una línea, punto o polígono para ver sus propiedades. Arrastra para desplazar.',pan:'Arrastra para desplazar el plano. Usa la rueda para hacer zoom.',measure:'Marca dos puntos para medir. Esc cancela.',line:'Marca el inicio y el final de la línea. Esc cancela.',polygon:'Marca los vértices. Enter o clic en el primer vértice cierra. Esc cancela.'};
+const instructions:Record<Mode,string>={angle:'Ángulo XY: marca extremo, vértice y extremo. Esc limpia.', 'angle-lines':'Ángulo XY: selecciona dos líneas. Esc limpia.',select:'Clic para seleccionar. En archivos de dibujo, arrastra hacia la derecha para contener o hacia la izquierda para cruzar. Mayús alterna y Alt quita. Botón central para mover.',pan:'Arrastra para desplazar el plano. Usa la rueda para hacer zoom.',measure:'Marca dos puntos para medir. Esc cancela.',line:'Marca el inicio y el final de la línea. Esc cancela.',polygon:'Marca los vértices. Enter o clic en el primer vértice cierra. Esc cancela.'};
 const ns='http://www.w3.org/2000/svg';
 interface LayerOptions { activeLayer(): string; visible(name: string): boolean; color(name: string): string; layers(): { name: string; color: string; isVisible: boolean }[]; created(name: string): void }
 export class CadTools {
@@ -17,7 +17,7 @@ export class CadTools {
   private angleFirst?:Shape; private angleLabels:{p:Point;label:string}[]=[];
   private index=new ShapeIndex([]);
   private edgeCache=new WeakMap<Shape,ReturnType<typeof segments>>();
-  private mode:Mode='select'; private snapPoint=true; private snapLine=false;
+  private mode:Mode='select'; private snapPoint=false; private snapLine=false;
   private shapes:Shape[]=[]; private drawings:Shape[]=[]; private pending:Point[]=[];
   private selected?:Shape; private cursor?:Point; private snapped?:Point;
   private down?:{x:number;y:number}; private frame=0; private serial=0;
@@ -83,6 +83,8 @@ export class CadTools {
     this.worldShapes=new Map((source?shapesFromDocument(source,{world3D:true}):[]).map(s=>[s.id,s]));
     if(source){const entities=new Map<string,import('./vendor/cad/index').CadEntity>();const visit=(list:import('./vendor/cad/index').CadEntity[])=>{for(const e of list){if(e.handle)entities.set(e.handle.toUpperCase(),e);if(e.attribs)visit(e.attribs);}};visit(source.entities);for(const block of Object.values(source.blocks))visit(block.entities);for(const shape of this.shapes)if(shape.entity?.handle)shape.entity=entities.get(shape.entity.handle.toUpperCase())??shape.entity;}
     this.index=new ShapeIndex(this.shapes);if(this.selected&&(this.selected.origin==='Plano'||!this.layerOptions.visible(this.selected.layer)))this.select();this.redraw();this.sync();}
+  selectedEntity(){return this.selected?.rootEntity??this.selected?.entity;}
+  selectAt(x:number,y:number){const r=this.viewer.canvas.getBoundingClientRect();this.click(this.viewer.renderer.screenToWorld({x:x-r.left,y:y-r.top}));}
   private pointer(e:PointerEvent){const r=this.viewer.canvas.getBoundingClientRect();return this.viewer.renderer.screenToWorld({x:e.clientX-r.left,y:e.clientY-r.top});}
   private tolerance(){const a=this.viewer.renderer.screenToWorld({x:0,y:0}),b=this.viewer.renderer.screenToWorld({x:10,y:0});return distance(a,b);}
   private snap(p:Point):Point{
@@ -94,7 +96,47 @@ export class CadTools {
     if(!found&&this.snapLine)for(const s of candidates)for(const [a,b]of this.edges(s)){const q=closest(p,a,b),d=distance(p,q);if(d<best){best=d;found=q;}}
     if(found){this.snapped=found;return {...found};}return {...p,z:this.spatial()?undefined:0};
   }
-  draftCapture(x:number,y:number,mode:string,z:number){const r=this.viewer.canvas.getBoundingClientRect(),p=this.viewer.renderer.screenToWorld({x:x-r.left,y:y-r.top});if(mode==='none')return {...drawingPoint(p,this.viewer.renderer.getSourceDocument()),z};let best=this.tolerance(),found:Point|undefined;for(const s of this.candidates(p,best)){if(mode==='point'){for(const n of s.nodes){const d=distance(p,n);if(d<best){best=d;found=n;}}}else if(mode==='line'){for(const[a,b]of this.edges(s)){const q=closest(p,a,b),d=distance(p,q);if(d<best){best=d;found=q;}}}else if(mode==='face'&&s.closed&&contains(p,s)){found=p;break;}}if(!found)return;const q=drawingPoint(found,this.viewer.renderer.getSourceDocument());return{x:q.x,y:q.y,z:q.z??z};}
+  draftCapture(x:number,y:number,mode:string,z:number){
+    const r=this.viewer.canvas.getBoundingClientRect();
+    const p=this.viewer.renderer.screenToWorld({x:x-r.left,y:y-r.top});
+    const source=this.viewer.renderer.getSourceDocument();
+    if(mode==='none')return {...drawingPoint(p,source),z};
+    let best=this.tolerance(),found:Point|undefined;
+    for(const shape of this.candidates(p,best)){
+      const authored=this.worldShapes.get(shape.id)??shape;
+      if(mode==='point'){
+        shape.nodes.forEach((node,index)=>{
+          const d=distance(p,node);
+          if(d<best){best=d;found={...node,z:authored.nodes[index]?.z??node.z??0};}
+        });
+      }else if(mode==='line'){
+        const worldEdges=this.edges(authored);
+        this.edges(shape).forEach(([a,b],index)=>{
+          const q=closest(p,a,b),d=distance(p,q);
+          if(d>=best)return;
+          const t=distance(a,q)/(distance(a,b)||1),edge=worldEdges[index];
+          const start=edge?.[0].z??a.z??0,end=edge?.[1].z??b.z??0;
+          best=d;found={...q,z:start+t*(end-start)};
+        });
+      }else if(shape.closed&&['3DFACE','SOLID','TRACE'].includes(shape.type)){
+        const [a,...others]=shape.points;
+        for(let i=0;i+1<others.length;i++){
+          const [b,c]=others.slice(i,i+2);
+          const denominator=(b.y-c.y)*(a.x-c.x)+(c.x-b.x)*(a.y-c.y);
+          if(!denominator)continue;
+          const u=((b.y-c.y)*(p.x-c.x)+(c.x-b.x)*(p.y-c.y))/denominator;
+          const v=((c.y-a.y)*(p.x-c.x)+(a.x-c.x)*(p.y-c.y))/denominator;
+          if(u<0||v<0||u+v>1)continue;
+          const [az,bz,cz]=[0,i+1,i+2].map(j=>authored.points[j]?.z??0);
+          found={...p,z:u*az+v*bz+(1-u-v)*cz};break;
+        }
+        if(found)break;
+      }
+    }
+    if(!found)return;
+    const q=drawingPoint(found,source);
+    return {x:q.x,y:q.y,z:q.z??0};
+  }
   setNavigationMode(mode:'select'|'pan'){this.setMode(mode);}
   getNavigationMode(){return this.mode;}
   private edges(s:Shape){let e=this.edgeCache.get(s);if(!e){e=segments(s);this.edgeCache.set(s,e);}return e;}

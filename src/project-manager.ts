@@ -93,7 +93,7 @@ export class ProjectManager {
             e.resources.push(file);
         }
     }
-    reset() { draftStore.files=[];window.dispatchEvent(new Event('mx:drafts-restored'));
+    reset() { draftStore.files=[];draftStore.activeId=undefined;window.dispatchEvent(new Event('mx:drafts-restored'));
         this.entries = []; this.active = undefined; this.selected = undefined; this.composite = false; this.compositeState = null; this.docs.clear(); this.models.clear(); this.infos.clear(); this.render(); }
     async add(files: File[]) {
         if (this.busy)
@@ -286,7 +286,7 @@ export class ProjectManager {
         this.snapshot();
         this.render();
         try {
-            const text = await writeProject(this.entries, this.active, this.adapter.light(), this.composite, this.composite ? this.compositeState : null, { drawings: draftStore.files, selected: this.selected??null, rightCollapsed: document.querySelector('.shell')!.classList.contains('right-collapsed'), leftCollapsed: document.querySelector('.shell')!.classList.contains('left-collapsed') }), url = URL.createObjectURL(new Blob([text], { type: 'application/json' })), a = document.createElement('a');
+            const text = await writeProject(this.entries, this.active, this.adapter.light(), this.composite, this.composite ? this.compositeState : null, { drawings: draftStore.files, activeDrawing: draftStore.activeId??null, selected: this.selected??null, rightCollapsed: document.querySelector('.shell')!.classList.contains('right-collapsed'), leftCollapsed: document.querySelector('.shell')!.classList.contains('left-collapsed') }), url = URL.createObjectURL(new Blob([text], { type: 'application/json' })), a = document.createElement('a');
             a.href = url;
             a.download = 'proyecto.mxproject';
             a.click();
@@ -342,7 +342,7 @@ export class ProjectManager {
                 if (this.composite && p.combinedState)
                     await this.adapter.restore(p.combinedState, []);
             }
-            draftStore.files=restoredDrafts;window.dispatchEvent(new Event('mx:drafts-restored'));
+            draftStore.files=restoredDrafts;draftStore.activeId=restoredDrafts.find(d=>d.id===p.ui?.activeDrawing)?.id;window.dispatchEvent(new Event('mx:drafts-restored'));
             this.saved = this.fingerprint();
         }
         catch (error) {
@@ -379,7 +379,7 @@ export class ProjectManager {
             this.render();
         }
     }
-    private fingerprint() { this.snapshot(); return JSON.stringify([draftStore.files,this.entries.map(e => ({ id: e.id, label: e.label, visible: e.visible, opacity: e.opacity, color: e.color, state: e.state }))]); }
+    private fingerprint() { this.snapshot(); return JSON.stringify([draftStore.files,draftStore.activeId,this.entries.map(e => ({ id: e.id, label: e.label, visible: e.visible, opacity: e.opacity, color: e.color, state: e.state }))]); }
     private async confirmReplace() {
         if ((!this.entries.length&&!draftStore.files.length) || this.fingerprint() === this.saved)
             return true;
@@ -629,6 +629,7 @@ export class ProjectManager {
         (document.getElementById('save-project-top') as HTMLButtonElement).disabled=(document.getElementById('project-save') as HTMLButtonElement).disabled;
         (document.getElementById('open-project-top') as HTMLButtonElement).disabled=this.busy;
     }
+    visibleFileNames() { return this.entries.filter(e=>e.visible).map(e=>e.label??e.file.name); }
     entitySelection(detail?: any) { this.selected = this.entries.some(e => e.id === detail?.fileID) ? detail.fileID : undefined; this.render(false); if (detail) {
         const pre = document.createElement('pre');
         pre.className = 'picked-properties';
