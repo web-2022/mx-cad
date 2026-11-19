@@ -28,7 +28,7 @@ export function draftProjection(camera:any,canvas:HTMLCanvasElement,origin:numbe
  const v=new T.Vector3(p.x-origin[0],p.y-origin[1],p.z-origin[2]).project(camera),r=canvas.getBoundingClientRect();
  return Math.abs(v.z)>1?undefined:{x:r.left+(v.x+1)*r.width/2,y:r.top+(1-v.y)*r.height/2};
 }
-export function draftCapture(camera:any,canvas:HTMLCanvasElement,scene:any,origin:number[],x:number,y:number,mode:string,z:number){
+export function draftCapture(camera:any,canvas:HTMLCanvasElement,scene:any,origin:number[],x:number,y:number,mode:string,z:number,blockCandidate?:any){
  const r=canvas.getBoundingClientRect(),ray=new T.Raycaster();
  camera.updateMatrixWorld();
  ray.setFromCamera(new T.Vector2((x-r.left)/r.width*2-1,1-(y-r.top)/r.height*2),camera);
@@ -42,6 +42,7 @@ export function draftCapture(camera:any,canvas:HTMLCanvasElement,scene:any,origi
  ray.params.Line.threshold=tolerance;ray.params.Points.threshold=tolerance;
  const objects:any[]=[];
  scene.traverseVisible((object:any)=>{
+  if(blockCandidate!==undefined&&object.isInstancedMesh)return;
   if(object.isMesh&&object.material?.depthTest!==false||mode!=='face'&&(object.isLine||object.isPoints)&&object.material?.depthTest!==false)objects.push(object);
  });
  const visible=(material:any,p:any)=>{
@@ -50,6 +51,7 @@ export function draftCapture(camera:any,canvas:HTMLCanvasElement,scene:any,origi
   return !clips.length||(material.clipIntersection?clips.some((plane:any)=>plane.distanceToPoint(p)>=0):clips.every((plane:any)=>plane.distanceToPoint(p)>=0));
  };
  scene.updateMatrixWorld(true);
+ if(blockCandidate)objects.push(blockCandidate);
  const hits=ray.intersectObjects(objects,false);
  let best:DraftPoint|undefined,distance=12;
  function consider(p:any,material:any){

@@ -20,6 +20,7 @@ export class BlockViewer{
  return this.loadModel(model,file.name,signal,progress);}
  async loadModel(model:Blocks,name:string,signal:AbortSignal,progress:(s:string)=>void,origin=model.origin){this.name=name.replace(/\.[^.]+$/,'');if(signal.aborted)throw new DOMException('Cancelado','AbortError');this.source=model;this.legends=[defaultLegend(model)];progress('Preparando instancias y selección espacial…');await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));const start=performance.now();this.localOrigin=[...origin];this.basis=new T.Matrix4().set(model.basis[0],model.basis[3],model.basis[6],0,model.basis[1],model.basis[4],model.basis[7],0,model.basis[2],model.basis[5],model.basis[8],0,0,0,0,1);this.mesh=new T.InstancedMesh(this.geometry,this.material,model.count);this.mesh.frustumCulled=false;this.mesh.count=0;this.scene.add(this.mesh);this.centers=new Float64Array(model.count*3);const boxes:Box[]=[];for(let i=0;i<model.count;i++){const c=inverse([0,1,2].map(a=>model.positions[i*3+a]-this.localOrigin[a]),model.basis);this.centers.set(c,i*3);boxes.push({row:i,min:c.map((v,a)=>v-model.sizes[i*3+a]/2),max:c.map((v,a)=>v+model.sizes[i*3+a]/2)});}this.index=new BlockIndex(boxes);this.visible=new Uint8Array(model.count);this.makeUI();this.apply();this.metrics.prepareMs=performance.now()-start;this.resize();this.fit();return{format:model.format,count:model.count};}
  modelData(){return this.model;}
+ private draftBlock?:any;
  private mixedCad:MixedInput['cad']=[];
  private mixed?:MixedLayers;private mixedActive?:string;private activeOpacity=1;private activeTint?:string;
  private get model(){if(!this.source)throw Error('Modelo no cargado.');return this.source;}
@@ -44,7 +45,17 @@ export class BlockViewer{
  private select(row?:number){if(row!==undefined)document.getElementById('viewport')?.dispatchEvent(new CustomEvent('mx:objectselect'));this.selected=row;this.outline.visible=row!==undefined;if(row===undefined)this.props.textContent='Selecciona un bloque. Escape limpia la selección.';else{const i=row*3;this.outline.matrixAutoUpdate=false;this.outline.matrix.copy(this.matrix(row));this.props.textContent=JSON.stringify({record:row+1,world:[...this.model.positions.slice(i,i+3)],dimensions:[...this.model.sizes.slice(i,i+3)],volume:this.model.sizes[i]*this.model.sizes[i+1]*this.model.sizes[i+2],units:this.model.units,original:record(this.model,row)},null,2);this.props.append(btn('Ajustar al bloque',()=>this.fit(undefined,[row])));}this.request();}
  private pick(x:number,y:number){if(!this.index||!this.mesh.visible)return;const start=performance.now(),r=this.canvas.getBoundingClientRect(),ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-r.left)/r.width*2-1,1-(y-r.top)/r.height*2),this.camera);const o=ray.ray.origin.toArray(),d=ray.ray.direction.toArray();let near=0,far=Infinity;for(const [k,r]of Object.entries(this.clips)){const a='xyz'.indexOf(k),min=r[0]-this.localOrigin[a],max=r[1]-this.localOrigin[a];if(Math.abs(d[a])<1e-15){if(o[a]<min||o[a]>max)return;}else{let n=(min-o[a])/d[a],f=(max-o[a])/d[a];if(n>f)[n,f]=[f,n];near=Math.max(near,n);far=Math.min(far,f);}}if(near>far)return;const hit=this.index.hit(inverse(o,this.model.basis),inverse(d,this.model.basis),i=>!!this.visible[i],near,far);this.metrics.pickMs=performance.now()-start;if(!hit)return;const p=ray.ray.at(hit.distance,new T.Vector3()).toArray().map((v:number,a:number)=>v+this.localOrigin[a]);return{row:hit.row,distance:hit.distance,point:{x:p[0],y:p[1],z:p[2]}};}
  draftProject(p:{x:number;y:number;z:number}){return draftProjection(this.camera,this.canvas,this.localOrigin,p);}
- draftCapture(x:number,y:number,mode:string,z:number){return draftCapture(this.camera,this.canvas,this.scene,this.localOrigin,x,y,mode,z);}
+ draftCapture(x:number,y:number,mode:string,z:number){
+  const hit=mode==='none'?undefined:this.pick(x,y);
+  let candidate:any=null;
+  if(hit){
+   candidate=this.draftBlock??=new T.Mesh(this.geometry,this.material);
+   candidate.matrixAutoUpdate=false;
+   candidate.matrix.copy(this.matrix(hit.row));
+   candidate.updateMatrixWorld(true);
+  }
+  return draftCapture(this.camera,this.canvas,this.scene,this.localOrigin,x,y,mode,z,candidate);
+ }
  cursorPoint(x:number,y:number){if(this.pointer)return;const r=this.canvas.getBoundingClientRect();if(x<r.left||x>r.right||y<r.top||y>r.bottom)return;const active=this.pick(x,y),other=this.mixedPick(x,y);return other&&other.distance<(active?.distance??Infinity)?{x:other.point.x+this.localOrigin[0],y:other.point.y+this.localOrigin[1],z:(other.point.z??0)+this.localOrigin[2]}:active?.point;}
  escape(){this.pointer=undefined;this.select(undefined);}
  attachScene(input:MixedInput,onActive:(id:string)=>void,warnings:string[]){this.mixedCad=input.cad;this.mixedActive=input.active;this.mixed=new MixedLayers(this.scene,this.localOrigin,input,this.mesh,()=>this.request(),(s:SceneSetting)=>{this.mesh.visible=s.visible;this.activeOpacity=s.opacity;this.activeTint=s.color??undefined;this.recolor();},onActive,warnings);const actions=document.createElement('div');actions.append(btn('Ajustar toda la escena',()=>this.fit()),btn('Ajustar bloques activos',()=>this.fit(undefined,[...this.rows])));this.mixed.panel.append(actions);this.panel.prepend(this.mixed.panel);this.fit();}
