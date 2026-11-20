@@ -279,3 +279,5 @@ button:disabled{opacity:.35;cursor:default}
 .cad-dock .draft-snap-menu .dock-button { min-height:32px; width:100%; }
 .block-properties dl { display:grid; grid-template-columns:auto minmax(0,1fr); gap:4px 10px; margin:8px 0; }
 .block-properties dd { margin:0; white-space:normal; }
+.dm-overview-active > :not(.dm-sectors) { display:none; }
+.dm-sectors fieldset[hidden] { display:none; }

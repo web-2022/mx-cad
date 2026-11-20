@@ -45,3 +45,19 @@ test('applies the authored Datamine rotation before filtering XYZ',async()=>{
  assert.equal(result.model.columns.find(c=>c.name==='IJK').data[0],2);
  assert.equal(result.model.columns.find(c=>c.name==='ATTR69').implicit,69);
 });
+
+test('overview counts every record, keeps distant extents and resolves detail after coarsening',async()=>{
+ const {readDmOverview}=await import('../src/datamine-sectors.ts');
+ const total=28001,source=new Blob([makeDm({rows:total})]);
+ const overview=await readDmOverview(source);
+ assert.equal(overview.total,total);
+ assert.ok(overview.cells.length<=12000);
+ assert.equal(overview.cells.reduce((n,c)=>n+c.count,0),total);
+ assert.equal(Math.min(...overview.cells.map(c=>c.box[0])),499995);
+ assert.equal(Math.max(...overview.cells.map(c=>c.box[1])),780005);
+ const cell=overview.cells.find(c=>c.end===total);
+ const detail=await readDmSector(source,{start:cell.first,end:cell.end,bounds:cell.center});
+ assert.equal(detail.model.count,cell.count);
+ assert.equal(detail.next,null);
+ assert.equal(detail.model.columns.find(c=>c.name==='IJK').data.at(-1),total);
+});

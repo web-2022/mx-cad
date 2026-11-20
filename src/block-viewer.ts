@@ -1,4 +1,4 @@
-import {largeDm,type DmBounds,type DmSectorRequest,type readDmSector} from './datamine-sectors';
+import {largeDm,type DmBounds,type DmSectorRequest,type readDmSector,type DmOverview} from './datamine-sectors';
 import {draftProjection,draftCapture} from './three-drafting';
 import {MixedLayers} from './mixed-layers';
 import type {MixedInput,MixedState,SceneSetting} from './mixed-types';
@@ -59,6 +59,72 @@ export class BlockViewer{
   });
  }
 
+ private overview?:{data:DmOverview;mesh:any;box:any};
+ private overviewActive=false;
+ private overviewCache?:DmOverview;
+ private fileVisible=true;
+
+ private readOverview(file:File,signal:AbortSignal,progress:(message:string)=>void){
+  return new Promise<DmOverview>((resolve,reject)=>{
+   const worker=new Worker(new URL('./dm-overview-worker.ts',import.meta.url),{type:'module'});
+   const cleanup=()=>{worker.terminate();signal.removeEventListener('abort',abort);};
+   const abort=()=>{cleanup();reject(new DOMException('Cancelado','AbortError'));};
+   signal.addEventListener('abort',abort,{once:true});
+   worker.onerror=()=>{cleanup();reject(Error('Falló el lector de la vista general DM.'));};
+   worker.onmessage=({data})=>{
+    if(data.scanned!==undefined){progress(`Preparando vista general: ${Math.floor(data.scanned*100/data.total)} %`);return;}
+    cleanup();
+    if(data.error)reject(Error(data.error));else resolve(data.result);
+   };
+   worker.postMessage(file);
+  });
+ }
+
+ private releaseOverview(){
+  if(!this.overview)return;
+  this.scene.remove(this.overview.mesh);
+  this.overview.mesh.material.dispose();
+  this.overview.mesh.dispose();
+  this.overview=undefined;
+ }
+
+ private showOverview(data:DmOverview){
+  const box=new T.Box3(),matrix=new T.Matrix4(),color=new T.Color();
+  const mesh=new T.InstancedMesh(this.geometry,new T.MeshLambertMaterial(),data.cells.length);
+  const maxCount=Math.max(...data.cells.map(cell=>cell.count));
+  data.cells.forEach(({box:b,count},index)=>{
+   const min=new T.Vector3(b[0]-this.localOrigin[0],b[2]-this.localOrigin[1],b[4]-this.localOrigin[2]);
+   const max=new T.Vector3(b[1]-this.localOrigin[0],b[3]-this.localOrigin[1],b[5]-this.localOrigin[2]);
+   box.expandByPoint(min).expandByPoint(max);
+   matrix.makeScale(max.x-min.x,max.y-min.y,max.z-min.z).setPosition(min.add(max).multiplyScalar(.5));
+   mesh.setMatrixAt(index,matrix);
+   mesh.setColorAt(index,color.setHSL(.55-.42*Math.log(count)/Math.log(Math.max(2,maxCount)),.65,.56));
+  });
+  mesh.computeBoundingSphere();
+  this.releaseOverview();
+  this.overview={data,mesh,box};this.scene.add(mesh);
+  this.toggleOverview(true);
+ }
+
+ private toggleOverview(active:boolean){
+  this.overviewActive=active;
+  if(this.overview)this.overview.mesh.visible=active&&this.fileVisible;
+  this.mesh.visible=!active&&this.fileVisible;
+  this.select();
+  this.panel.classList.toggle('dm-overview-active',active);
+  this.legendBox.hidden=active;
+  this.fit();
+ }
+
+ private overviewAt(event:MouseEvent){
+  if(!this.overview?.mesh.visible)return;
+  const r=this.canvas.getBoundingClientRect(),ray=new T.Raycaster();
+  this.camera.updateMatrixWorld();
+  ray.setFromCamera(new T.Vector2((event.clientX-r.left)*2/r.width-1,1-(event.clientY-r.top)*2/r.height),this.camera);
+  const instance=ray.intersectObject(this.overview.mesh,false)[0]?.instanceId;
+  return instance===undefined?undefined:this.overview.data.cells[instance];
+ }
+
  private mountSectorControls(){
   const sector=this.sector!;
   const section=document.createElement('section');section.className='dm-sectors';
@@ -87,29 +153,60 @@ export class BlockViewer{
   });
   spatial.append(search);controls.append(spatial);
   const cancel=btn('Cancelar lectura',()=>this.sectorOperation?.abort());cancel.hidden=true;
-  section.append(title,status,controls,cancel);
+  const overviewButton=btn('Vista general',()=>{void overview();});
+  const sectorButton=btn('Volver al sector',()=>{
+   this.toggleOverview(false);setMode();status.textContent=describe();
+  });
+  section.append(title,overviewButton,sectorButton,status,controls,cancel);
   this.panel.prepend(section);
   const describe=()=>`${sector.request.bounds?'Búsqueda XYZ · ':'Orden del archivo · '}${this.model.count.toLocaleString()} bloques cargados · ${sector.total.toLocaleString()} en el archivo · desde el registro ${(sector.request.start+1).toLocaleString()}. Filtros y CSV del sector actual.`;
+  const describeOverview=()=>`Vista general · ${this.overview!.data.total.toLocaleString()} bloques en ${this.overview!.data.cells.length.toLocaleString()} grupos. Color por cantidad. Haz doble clic en un grupo para ver sus bloques originales.`;
+  const setMode=()=>{
+   sectorButton.hidden=!this.overviewActive;controls.hidden=this.overviewActive;
+   overviewButton.disabled=this.overviewActive;
+  };
+  const overview=async()=>{
+   if(this.sectorOperation)return;
+   const operation=new AbortController();
+   this.sectorOperation=operation;controls.disabled=true;overviewButton.disabled=true;cancel.hidden=false;
+   status.textContent='Leyendo el modelo completo por partes…';
+   try{
+    const data=this.overview?.data??this.overviewCache??await this.readOverview(sector.file,operation.signal,message=>status.textContent=message);
+    this.showOverview(data);status.textContent=describeOverview();
+   }catch(error){status.textContent=operation.signal.aborted?'Lectura cancelada. '+describe():String(error);}
+   finally{this.sectorOperation=undefined;controls.disabled=false;cancel.hidden=true;setMode();}
+  };
+  this.canvas.addEventListener('dblclick',event=>{
+   if(!this.overviewActive||this.sectorOperation)return;
+   const cell=this.overviewAt(event);
+   if(cell)void load({start:cell.first,end:cell.end,bounds:cell.center},[]);
+  });
   const update=()=>{previous.disabled=!sector.history.length;next.disabled=sector.next===null;};
   const load=async(request:DmSectorRequest,history:number[])=>{
    if(this.sectorOperation)return;
    const operation=new AbortController();
-   this.sectorOperation=operation;controls.disabled=true;cancel.hidden=false;
+   this.sectorOperation=operation;controls.disabled=true;overviewButton.disabled=true;sectorButton.disabled=true;cancel.hidden=false;
    status.textContent='Leyendo sector DM…';
    try{
     const result=await this.readSector(sector.file,request,operation.signal,message=>status.textContent=message);
     if(!result.model){
      if(request.bounds&&sector.request.bounds&&request.start===sector.next)sector.next=null;
-     status.textContent='Sin bloques en el rango solicitado. '+describe();return;
+     status.textContent='Sin bloques en el rango solicitado. '+(this.overviewActive?describeOverview():describe());return;
     }
     cancel.hidden=true;
+    const overviewData=this.overview?.data;
+    if(this.overviewActive)this.toggleOverview(false);
     await this.loadModel(result.model,sector.file.name,operation.signal,message=>status.textContent=message);
+    // The overview uses the sector origin. Rebuild its matrices only when shown again.
+    if(overviewData){this.releaseOverview();this.overviewCache=overviewData;}
+    if(request.bounds)fields.forEach((field,i)=>field.value=String(request.bounds![i]));
+    else fields.forEach(field=>field.value='');
     Object.assign(sector,{request,history,next:result.next});jump.value=String(request.start+1);
     status.textContent=describe();
-   }catch(error){status.textContent=operation.signal.aborted?'Lectura cancelada. '+describe():String(error);}
-   finally{this.sectorOperation=undefined;controls.disabled=false;cancel.hidden=true;update();}
+   }catch(error){status.textContent=operation.signal.aborted?'Lectura cancelada. '+(this.overviewActive?describeOverview():describe()):String(error);}
+   finally{this.sectorOperation=undefined;controls.disabled=false;sectorButton.disabled=false;cancel.hidden=true;setMode();update();}
   };
-  status.textContent=describe();update();
+  status.textContent=describe();setMode();update();
  }
 
  private draftBlock?:any;
@@ -164,6 +261,7 @@ export class BlockViewer{
  private pick(x:number,y:number){if(!this.index||!this.mesh.visible)return;const start=performance.now(),r=this.canvas.getBoundingClientRect(),ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-r.left)/r.width*2-1,1-(y-r.top)/r.height*2),this.camera);const o=ray.ray.origin.toArray(),d=ray.ray.direction.toArray();let near=0,far=Infinity;for(const [k,r]of Object.entries(this.clips)){const a='xyz'.indexOf(k),min=r[0]-this.localOrigin[a],max=r[1]-this.localOrigin[a];if(Math.abs(d[a])<1e-15){if(o[a]<min||o[a]>max)return;}else{let n=(min-o[a])/d[a],f=(max-o[a])/d[a];if(n>f)[n,f]=[f,n];near=Math.max(near,n);far=Math.min(far,f);}}if(near>far)return;const hit=this.index.hit(inverse(o,this.model.basis),inverse(d,this.model.basis),i=>!!this.visible[i],near,far);this.metrics.pickMs=performance.now()-start;if(!hit)return;const p=ray.ray.at(hit.distance,new T.Vector3()).toArray().map((v:number,a:number)=>v+this.localOrigin[a]);return{row:hit.row,distance:hit.distance,point:{x:p[0],y:p[1],z:p[2]}};}
  draftProject(p:{x:number;y:number;z:number}){return draftProjection(this.camera,this.canvas,this.localOrigin,p);}
  draftCapture(x:number,y:number,mode:string,z:number){
+  if(this.overviewActive)return;
   const hit=mode==='none'?undefined:this.pick(x,y);
   let candidate:any=null;
   if(hit){
@@ -192,7 +290,7 @@ export class BlockViewer{
  getState(){return{up:this.camera.up.toArray(),position:this.camera.position.toArray(),target:this.orbit.target.toArray(),zoom:this.camera.zoom,left:this.camera.left,right:this.camera.right,top:this.camera.top,bottom:this.camera.bottom,near:this.camera.near,far:this.camera.far};}
  setState(s:any){if(s.up)this.camera.up.fromArray(s.up);this.camera.position.fromArray(s.position);this.orbit.target.fromArray(s.target);for(const k of ['zoom','left','right','top','bottom','near','far'])this.camera[k]=s[k];this.camera.updateProjectionMatrix();this.orbit.update();this.request();}
  setInteractionMode(mode:'select'|'pan'|'orbit'){this.orbit.enableRotate=mode==='orbit';this.orbit.mouseButtons.LEFT=mode==='pan'?T.MOUSE.PAN:mode==='orbit'?T.MOUSE.ROTATE:-1;}
- fit(direction?:number[],rows=this.rows){if(!rows.length&&!this.mixed)return;const box=new T.Box3();for(const row of rows)if(this.mesh.visible)box.union(new T.Box3(new T.Vector3(-.5,-.5,-.5),new T.Vector3(.5,.5,.5)).applyMatrix4(this.matrix(row)));if(rows===this.rows&&this.mixed)box.union(this.mixed.bounds());if(box.isEmpty())return;this.fitBounds(box,direction);}
+ fit(direction?:number[],rows=this.rows){if(this.overviewActive&&this.overview)return this.fitBounds(this.overview.box,direction);if(!rows.length&&!this.mixed)return;const box=new T.Box3();for(const row of rows)if(this.mesh.visible)box.union(new T.Box3(new T.Vector3(-.5,-.5,-.5),new T.Vector3(.5,.5,.5)).applyMatrix4(this.matrix(row)));if(rows===this.rows&&this.mixed)box.union(this.mixed.bounds());if(box.isEmpty())return;this.fitBounds(box,direction);}
  private fitBounds(box:any,direction?:number[]){if(box.isEmpty())return;const c=box.getCenter(new T.Vector3()),span=Math.max(box.getSize(new T.Vector3()).length(),1e-5),ratio=Math.max(this.stage.clientWidth,1)/Math.max(this.stage.clientHeight,1),dir=direction?new T.Vector3(...direction):this.camera.position.clone().sub(this.orbit.target);this.camera.left=-span*ratio*.55;this.camera.right=span*ratio*.55;this.camera.top=span*.55;this.camera.bottom=-span*.55;this.camera.zoom=1;this.camera.near=Math.max(1e-5,span/1e6);this.camera.far=span*20;this.camera.position.copy(c).add(dir.normalize().multiplyScalar(span*3));this.orbit.target.copy(c);this.camera.updateProjectionMatrix();this.orbit.update();this.request();}
  fitFile(id:string){if(id===this.mixedActive||!this.mixed)this.fit(undefined,[...this.rows]);else{const box=this.mixed.fileBounds(id);if(box)this.fitBounds(box);}}
  preset(v:string){const dirs:Record<string,number[]>={top:[0,0,1],front:[0,-1,0],side:[1,0,0],iso:[1,-1,.8]};this.fit(dirs[v]??dirs.iso);}
@@ -202,9 +300,9 @@ export class BlockViewer{
  resize(){const w=Math.max(this.stage.clientWidth,1),h=Math.max(this.stage.clientHeight,1),half=(this.camera.top-this.camera.bottom)*w/h/2;this.camera.left=-half;this.camera.right=half;this.camera.updateProjectionMatrix();this.renderer.setSize(w,h);this.request();}
  private request(){if(!this.frame)this.frame=requestAnimationFrame(()=>{this.frame=0;this.render();});}
  render(){const start=performance.now();this.renderer.render(this.scene,this.camera);this.metrics.drawSubmitMs=performance.now()-start;const q=this.camera.quaternion.clone().invert(),axes:any={};for(const [name,p]of [['x',[1,0,0]],['y',[0,1,0]],['z',[0,0,1]]] as const){const a=new T.Vector3(...p).applyQuaternion(q);axes[name]={x:a.x,y:a.y};}document.getElementById('viewport')?.dispatchEvent(new CustomEvent('mx:axes',{detail:axes}));}
- png(legend=true){this.render();const out=document.createElement('canvas');out.width=this.canvas.width;out.height=this.canvas.height;const ctx=out.getContext('2d')!;ctx.drawImage(this.canvas,0,0);if(legend){const rows=this.legendRows(),l=this.legends[this.active],scale=out.width/this.stage.clientWidth;ctx.save();ctx.scale(scale,scale);const x=12,y=16,w=Math.min(320,this.stage.clientWidth-24),height=Math.min((rows.length+3)*20,this.stage.clientHeight-32),limit=Math.max(0,Math.floor(height/20)-3);ctx.fillStyle='#18253a';ctx.fillRect(x,y,w,height);ctx.font='11px sans-serif';ctx.fillStyle='white';ctx.fillText(l.name+' · '+l.field+' '+l.units,x+8,y+16,w-16);rows.slice(0,limit).forEach((r,i)=>{ctx.fillStyle=r.color;ctx.fillRect(x+8,y+26+i*20,12,12);ctx.fillStyle='white';ctx.fillText(r.label,x+28,y+37+i*20,w-36);});ctx.fillText(rows.length>limit?`Leyenda parcial: ${limit}/${rows.length}; consulta JSON.`:'Límites fijos · modelo completo',x+8,y+height-8,w-16);ctx.restore();}const a=document.createElement('a');a.href=out.toDataURL('image/png');a.download=this.name+'.png';a.click();}
- setFileVisible(visible:boolean){this.mesh.visible=visible;if(!visible)this.escape();this.request();}
+ png(legend=true){this.render();const out=document.createElement('canvas');out.width=this.canvas.width;out.height=this.canvas.height;const ctx=out.getContext('2d')!;ctx.drawImage(this.canvas,0,0);if(legend&&!this.overviewActive){const rows=this.legendRows(),l=this.legends[this.active],scale=out.width/this.stage.clientWidth;ctx.save();ctx.scale(scale,scale);const x=12,y=16,w=Math.min(320,this.stage.clientWidth-24),height=Math.min((rows.length+3)*20,this.stage.clientHeight-32),limit=Math.max(0,Math.floor(height/20)-3);ctx.fillStyle='#18253a';ctx.fillRect(x,y,w,height);ctx.font='11px sans-serif';ctx.fillStyle='white';ctx.fillText(l.name+' · '+l.field+' '+l.units,x+8,y+16,w-16);rows.slice(0,limit).forEach((r,i)=>{ctx.fillStyle=r.color;ctx.fillRect(x+8,y+26+i*20,12,12);ctx.fillStyle='white';ctx.fillText(r.label,x+28,y+37+i*20,w-36);});ctx.fillText(rows.length>limit?`Leyenda parcial: ${limit}/${rows.length}; consulta JSON.`:'Límites fijos · modelo completo',x+8,y+height-8,w-16);ctx.restore();}const a=document.createElement('a');a.href=out.toDataURL('image/png');a.download=this.name+'.png';a.click();}
+ setFileVisible(visible:boolean){this.fileVisible=visible;this.mesh.visible=visible&&!this.overviewActive;if(this.overview)this.overview.mesh.visible=visible&&this.overviewActive;if(!visible)this.escape();this.request();}
  setCadLayer(id:string,name:string,visible:boolean){this.mixed?.setCadLayer(id,name,visible);}
  mountTools(target:HTMLElement){target.replaceChildren(this.panel);}
- destroy(){this.panel.remove();this.mixed?.dispose();cancelAnimationFrame(this.frame);this.sectorOperation?.abort();this.worker?.terminate();this.observer.disconnect();this.orbit.dispose();this.geometry.dispose();this.material.dispose();this.mesh?.dispose();this.outline.geometry.dispose();this.outline.material.dispose();this.renderer.dispose();this.renderer.forceContextLoss();this.host.replaceChildren();this.source=undefined;this.index=undefined;}
+ destroy(){this.panel.remove();this.mixed?.dispose();cancelAnimationFrame(this.frame);this.sectorOperation?.abort();this.releaseOverview();this.worker?.terminate();this.observer.disconnect();this.orbit.dispose();this.geometry.dispose();this.material.dispose();this.mesh?.dispose();this.outline.geometry.dispose();this.outline.material.dispose();this.renderer.dispose();this.renderer.forceContextLoss();this.host.replaceChildren();this.source=undefined;this.index=undefined;}
 }
