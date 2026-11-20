@@ -1,3 +1,4 @@
+import {checkOverviewLegend,equalOverviewIntervals,overviewDefaultLegend,overviewLegendModel} from './dm-overview-legend';
 import {largeDm,type DmBounds,type DmSectorRequest,type readDmSector,type DmOverview,type DmOverviewRequest} from './datamine-sectors';
 import {draftProjection,draftCapture} from './three-drafting';
 import {MixedLayers} from './mixed-layers';
@@ -90,14 +91,37 @@ export class BlockViewer{
  }
 
  private showOverview(data:DmOverview,legend:HTMLElement){
-  const box=new T.Box3(),matrix=new T.Matrix4(),color=new T.Color();
+  const box=new T.Box3(),matrix=new T.Matrix4();
   const mesh=new T.InstancedMesh(this.geometry,new T.MeshLambertMaterial(),data.cells.length);
-  const maxCount=Math.max(1,...data.cells.map(cell=>cell.count));
-  const values=data.cells.flatMap(cell=>cell.mean===undefined?[]:[cell.mean]);
-  const min=Math.min(...values),max=Math.max(...values);
-  const categories=[...new Set(data.cells.flatMap(cell=>!cell.mixed&&cell.category!==undefined?[cell.category]:[]))].sort();
-  const palette=new Map(categories.slice(0,16).map((name,i)=>[name,new T.Color().setHSL((i*.61803398875)%1,.64,.58)]));
-  const mixed='#a4aabd',missing='#555d71',other='#cf9b59',highColor=new T.Color('#d5322b');
+  data.cells.forEach((cell,index)=>{
+   const {box:b}=cell;
+   const min=new T.Vector3(b[0]-this.localOrigin[0],b[2]-this.localOrigin[1],b[4]-this.localOrigin[2]);
+   const max=new T.Vector3(b[1]-this.localOrigin[0],b[3]-this.localOrigin[1],b[5]-this.localOrigin[2]);
+   box.expandByPoint(min).expandByPoint(max);
+   matrix.makeScale(max.x-min.x,max.y-min.y,max.z-min.z).setPosition(min.add(max).multiplyScalar(.5));
+   mesh.setMatrixAt(index,matrix);
+  });
+  if(data.cells.length)mesh.computeBoundingSphere();
+  this.releaseOverview();
+  this.overview={data,mesh,box};this.scene.add(mesh);
+  this.paintOverview(legend);
+  this.toggleOverview(true);
+ }
+
+ private overviewLegends=new Map<string,Legend>();
+ private paintOverview(legend:HTMLElement){
+  const {data,mesh}=this.overview!;
+  const model=data.field?overviewLegendModel(data):undefined;
+  const custom=data.field?this.overviewLegends.get(data.field):undefined;
+  const style=custom??(data.field&&data.numeric?overviewDefaultLegend(data):undefined);
+  const pick=style&&model?colorizer(model,style):undefined;
+  const observed=data.cells.flatMap(c=>c.mean===undefined?[]:[c.mean]);
+  const observedMin=Math.min(...observed),observedMax=Math.max(...observed);
+  const categories=[...new Set(data.cells.flatMap(c=>!c.mixed&&c.category!==undefined?[c.category]:[]))].sort();
+  const palette=new Map(categories.slice(0,16).map((name,i)=>[name,'#'+new T.Color().setHSL((i*.61803398875)%1,.64,.58).getHexString()]));
+  const mixed='#a4aabd',missing=style?.nullColor??'#555d71',other='#cf9b59';
+  const maxCount=Math.max(2,...data.cells.map(c=>c.count)),color=new T.Color();
+  const fmt=(n:number)=>String(n);
   legend.replaceChildren();
   const row=(name:string,swatch:string)=>{
    const item=document.createElement('div'),sample=document.createElement('span');
@@ -105,35 +129,30 @@ export class BlockViewer{
   };
   if(data.field){
    const heading=document.createElement('strong');heading.textContent=data.field+(data.units?' · '+data.units:'');legend.append(heading);
-   if(data.numeric&&values.length){
-    const ramp=document.createElement('div');ramp.className='overview-ramp';
-    const labels=document.createElement('div');labels.textContent=`Promedio por grupo · ${min.toLocaleString(undefined,{maximumSignificantDigits:6})} a ${max.toLocaleString(undefined,{maximumSignificantDigits:6})}`;
-    legend.append(ramp,labels);
+   if(style?.mode==='continuous'&&(custom||observed.length)){
+    const ramp=document.createElement('div');ramp.className='overview-ramp';ramp.style.background=`linear-gradient(90deg,${style.low},${style.high})`;
+    const labels=document.createElement('div');labels.textContent=`Promedio por grupo · ${fmt(custom?style.min:observedMin)} a ${fmt(custom?style.max:observedMax)}`;legend.append(ramp,labels);
+    row('Fuera de rango',style.outside);
+   }else if(style?.mode==='intervals'){
+    for(const entry of style.entries)row(`${entry.label?entry.label+' · ':''}[${fmt(entry.min!)}, ${fmt(entry.max!)}${entry.inclusive?']':')'}`,entry.color);
+    row('Fuera de intervalo',style.outside);
    }else if(!data.numeric){
-    for(const [name,color] of palette)row(name,'#'+color.getHexString());
+    for(const [name,swatch] of palette)row(name,swatch);
     if(categories.length>palette.size)row('Otras categorías',other);
-    if(data.cells.some(cell=>cell.mixed))row('Categorías mixtas',mixed);
+    if(data.cells.some(c=>c.mixed))row('Categorías mixtas',mixed);
    }
-   if(data.cells.some(cell=>!cell.valid))row('Sin valor',missing);
+   if(data.cells.some(c=>!c.valid))row('Sin valor',missing);
   }
-  data.cells.forEach((cell,index)=>{
-   const {box:b,count}=cell;
-   const min=new T.Vector3(b[0]-this.localOrigin[0],b[2]-this.localOrigin[1],b[4]-this.localOrigin[2]);
-   const max=new T.Vector3(b[1]-this.localOrigin[0],b[3]-this.localOrigin[1],b[5]-this.localOrigin[2]);
-   box.expandByPoint(min).expandByPoint(max);
-   matrix.makeScale(max.x-min.x,max.y-min.y,max.z-min.z).setPosition(min.add(max).multiplyScalar(.5));
-   mesh.setMatrixAt(index,matrix);
-   if(!data.field)color.setHSL(.55-.42*Math.log(count)/Math.log(Math.max(2,maxCount)),.65,.56);
+  data.cells.forEach((cell,i)=>{
+   if(!data.field)color.setHSL(.55-.42*Math.log(cell.count)/Math.log(maxCount),.65,.56);
    else if(!cell.valid)color.set(missing);
-   else if(data.numeric)color.set('#2468ab').lerp(highColor,max===min?0.5:(cell.mean!-min)/(max-min));
-   else if(cell.mixed)color.set(mixed);
-   else color.set(palette.get(cell.category!)??other);
-   mesh.setColorAt(index,color);
+   else if(!custom&&style&&observedMin===observedMax)color.set(style.low).lerp(new T.Color(style.high),.5);
+   else if(pick)color.set(pick(i));
+   else color.set(cell.mixed?mixed:palette.get(cell.category!)??other);
+   mesh.setColorAt(i,color);
   });
-  if(data.cells.length)mesh.computeBoundingSphere();
-  this.releaseOverview();
-  this.overview={data,mesh,box};this.scene.add(mesh);
-  this.toggleOverview(true);
+  if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
+  this.request();
  }
 
  private toggleOverview(active:boolean){
@@ -215,7 +234,90 @@ export class BlockViewer{
    conditions.append(row);refresh();
   };
   const overviewLegend=document.createElement('div');overviewLegend.className='dm-overview-legend';
-  analysis.append(label,overviewLegend,join,conditions,btn('Añadir condición',addCondition),btn('Aplicar leyenda y filtros',()=>{
+  const legendEditor=document.createElement('details'),legendSummary=document.createElement('summary'),legendFields=document.createElement('div');
+  legendSummary.textContent='Editar escala y rangos';legendEditor.append(legendSummary,legendFields);legendEditor.hidden=true;
+  const editLegend=()=>{
+   const data=this.overview?.data;
+   legendEditor.hidden=!data?.numeric;
+   legendFields.replaceChildren();
+   if(!data?.numeric)return;
+   let draft=structuredClone(this.overviewLegends.get(data.field!)??overviewDefaultLegend(data));
+   const error=document.createElement('p');error.setAttribute('role','alert');
+   const fields=document.createElement('div');
+   const upload=document.createElement('input');upload.type='file';upload.accept='.json';upload.hidden=true;
+   const field=(host:HTMLElement,name:string,input:HTMLElement)=>{
+    const label=document.createElement('label');input.setAttribute('aria-label',name);label.append(name+' ',input);host.append(label);
+   };
+   const number=(value:number|undefined,set:(v:number)=>void)=>inp(value===undefined?'':String(value),'number',v=>set(v.trim()?Number(v):NaN));
+   const redraw=()=>{
+    fields.replaceChildren();
+    const mode=sel(['Continua','Por intervalos'],draft.mode==='intervals'?'Por intervalos':'Continua',v=>{
+     draft.mode=v==='Continua'?'continuous':'intervals';redraw();
+    });
+    field(fields,'Escala',mode);
+    field(fields,draft.mode==='intervals'?'Mínimo para generar':'Mínimo',number(draft.min,v=>draft.min=v));
+    field(fields,draft.mode==='intervals'?'Máximo para generar':'Máximo',number(draft.max,v=>draft.max=v));
+    field(fields,'Color sin valor',inp(draft.nullColor,'color',v=>draft.nullColor=v));
+    field(fields,'Color fuera de rango',inp(draft.outside,'color',v=>draft.outside=v));
+    if(draft.mode==='continuous'){
+     field(fields,'Color mínimo',inp(draft.low,'color',v=>draft.low=v));
+     field(fields,'Color máximo',inp(draft.high,'color',v=>draft.high=v));
+     return;
+    }
+    let count=5;
+    const segments=number(count,v=>count=v);segments.min='2';segments.max='12';segments.step='1';
+    field(fields,'Cantidad de intervalos',segments);
+    fields.append(btn('Generar intervalos iguales',()=>{
+     try{draft.entries=equalOverviewIntervals(draft,count);redraw();error.textContent='';}
+     catch(e){error.textContent=e instanceof Error?e.message:String(e);}
+    }));
+    draft.entries.forEach((entry,i)=>{
+     const group=document.createElement('fieldset'),heading=document.createElement('legend');
+     heading.textContent=`Intervalo ${i+1}`;group.append(heading);
+     field(group,'Etiqueta',inp(entry.label,'text',v=>entry.label=v));
+     field(group,'Desde',number(entry.min,v=>entry.min=v));
+     field(group,'Hasta',number(entry.max,v=>entry.max=v));
+     field(group,'Color',inp(entry.color,'color',v=>entry.color=v));
+     const inclusive=inp('','checkbox',()=>entry.inclusive=inclusive.checked);inclusive.checked=!!entry.inclusive;
+     field(group,'Incluir el límite superior',inclusive);
+     group.append(btn('Quitar intervalo',()=>{draft.entries.splice(i,1);redraw();}));
+     fields.append(group);
+    });
+    fields.append(btn('Añadir intervalo',()=>{
+     if(draft.entries.length>=64){error.textContent='Se admiten hasta 64 intervalos.';return;}
+     draft.entries.push({label:'',color:draft.high,min:draft.entries.at(-1)?.max??draft.min,max:undefined});
+     redraw();
+    }));
+   };
+   const apply=()=>{
+    if(this.overview?.data!==data)return;
+    try{
+     const checked=structuredClone(draft);
+     if(checked.mode==='intervals')checked.entries.sort((a,b)=>(a.min??NaN)-(b.min??NaN));
+     checkOverviewLegend(data,checked);this.overviewLegends.set(data.field!,checked);
+     draft=structuredClone(checked);redraw();error.textContent='';this.paintOverview(overviewLegend);
+    }catch(e){error.textContent=e instanceof Error?e.message:String(e);}
+   };
+   upload.onchange=async()=>{
+    try{
+     const file=upload.files?.[0];if(!file)return;
+     if(file.size>1024*1024)throw Error('El archivo de leyenda excede 1 MiB.');
+     const payload=JSON.parse(await file.text());
+     if(payload.format!=='mx-cad-overview-legend'||payload.version!==1)throw Error('Archivo de leyenda incompatible.');
+     checkOverviewLegend(data,payload.legend);
+     draft=payload.legend;apply();
+    }catch(e){error.textContent=e instanceof Error?e.message:String(e);}
+    finally{upload.value='';}
+   };
+   legendFields.append(fields,error,btn('Aplicar escala',apply),btn('Restablecer automática',()=>{
+    this.overviewLegends.delete(data.field!);this.paintOverview(overviewLegend);editLegend();
+   }),btn('Guardar leyenda JSON',()=>{
+    try{checkOverviewLegend(data,draft);save(data.field+'-leyenda.json',JSON.stringify({format:'mx-cad-overview-legend',version:1,legend:draft},null,2),'application/json');}
+    catch(e){error.textContent=e instanceof Error?e.message:String(e);}
+   }),btn('Cargar leyenda JSON',()=>upload.click()),upload);
+   redraw();
+  };
+  analysis.append(label,overviewLegend,legendEditor,join,conditions,btn('Añadir condición',addCondition),btn('Aplicar leyenda y filtros',()=>{
    const selected:Condition[]=[];
    for(const {field,op,input} of rows){
     const numeric=columns.find(c=>c.name===field.value)!.numeric;
@@ -243,7 +345,7 @@ export class BlockViewer{
     const cached=JSON.stringify(request)===JSON.stringify(this.overviewQuery)?this.overview?.data??this.overviewCache:undefined;
     const data=cached??await this.readOverview(sector.file,request,operation.signal,message=>status.textContent=message);
     this.overviewQuery=request;
-    this.showOverview(data,overviewLegend);status.textContent=describeOverview();
+    this.showOverview(data,overviewLegend);editLegend();status.textContent=describeOverview();
    }catch(error){status.textContent=operation.signal.aborted?'Lectura cancelada. '+(this.overviewActive?describeOverview():describe()):String(error);}
    finally{this.sectorOperation=undefined;controls.disabled=false;analysis.disabled=false;sectorButton.disabled=false;cancel.hidden=true;setMode();}
   };

@@ -80,3 +80,22 @@ test('overview filters source blocks before summarizing and drill-down keeps the
  assert.equal(categories.numeric,false);
  assert.ok(categories.cells.some(c=>c.mixed));
 });
+
+test('overview legend generates editable intervals and validates boundaries before coloring',async()=>{
+ const {overviewDefaultLegend,overviewLegendModel,checkOverviewLegend,equalOverviewIntervals}=await import('../src/dm-overview-legend.ts');
+ const {colorizer}=await import('../src/block-data.ts');
+ const data={field:'NSR',numeric:true,units:'USD/t',cells:[{mean:50},{mean:100},{mean:150},{mean:200},{}]};
+ const legend=overviewDefaultLegend(data);
+ legend.min=50;legend.max=150;legend.mode='intervals';
+ legend.entries=equalOverviewIntervals(legend,2);
+ checkOverviewLegend(data,legend);
+ const color=colorizer(overviewLegendModel(data),legend);
+ assert.equal(color(0),legend.entries[0].color);
+ assert.equal(color(1),legend.entries[1].color);
+ assert.equal(color(2),legend.entries[1].color);
+ assert.equal(color(3),legend.outside);
+ assert.equal(color(4),legend.nullColor);
+ legend.entries[0].inclusive=true;
+ assert.throws(()=>checkOverviewLegend(data,legend),/superpuestos/);
+ assert.throws(()=>equalOverviewIntervals(legend,13));
+});
