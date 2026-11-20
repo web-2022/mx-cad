@@ -61,3 +61,22 @@ test('overview counts every record, keeps distant extents and resolves detail af
  assert.equal(detail.next,null);
  assert.equal(detail.model.columns.find(c=>c.name==='IJK').data.at(-1),total);
 });
+
+test('overview filters source blocks before summarizing and drill-down keeps the predicate',async()=>{
+ const {readDmOverview}=await import('../src/datamine-sectors.ts');
+ const file=new Blob([makeDm({rows:28001})]);
+ const filter={join:'AND',children:[{field:'AU',op:'>=',value:10000},{field:'ZONE',op:'=',value:'2'}]};
+ const overview=await readDmOverview(file,()=>{},{field:'AU',filter});
+ assert.equal(overview.matched,9001);
+ assert.equal(overview.total,28001);
+ assert.equal(overview.cells.reduce((n,c)=>n+c.count,0),overview.matched);
+ const cell=overview.cells[0];
+ const detail=await readDmSector(file,{start:cell.first,end:cell.end,bounds:cell.center,filter});
+ const values=[...detail.model.columns.find(c=>c.name==='AU').data];
+ assert.equal(detail.model.count,cell.count);
+ assert.ok(values.every(v=>v>=10000&&v%2===0));
+ assert.ok(Math.abs(cell.mean-values.reduce((n,v)=>n+v,0)/values.length)<1e-9);
+ const categories=await readDmOverview(file,()=>{},{field:'ZONE'});
+ assert.equal(categories.numeric,false);
+ assert.ok(categories.cells.some(c=>c.mixed));
+});

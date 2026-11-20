@@ -1,4 +1,4 @@
-import {largeDm,type DmBounds,type DmSectorRequest,type readDmSector,type DmOverview} from './datamine-sectors';
+import {largeDm,type DmBounds,type DmSectorRequest,type readDmSector,type DmOverview,type DmOverviewRequest} from './datamine-sectors';
 import {draftProjection,draftCapture} from './three-drafting';
 import {MixedLayers} from './mixed-layers';
 import type {MixedInput,MixedState,SceneSetting} from './mixed-types';
@@ -62,9 +62,10 @@ export class BlockViewer{
  private overview?:{data:DmOverview;mesh:any;box:any};
  private overviewActive=false;
  private overviewCache?:DmOverview;
+ private overviewQuery:DmOverviewRequest={};
  private fileVisible=true;
 
- private readOverview(file:File,signal:AbortSignal,progress:(message:string)=>void){
+ private readOverview(file:File,request:DmOverviewRequest,signal:AbortSignal,progress:(message:string)=>void){
   return new Promise<DmOverview>((resolve,reject)=>{
    const worker=new Worker(new URL('./dm-overview-worker.ts',import.meta.url),{type:'module'});
    const cleanup=()=>{worker.terminate();signal.removeEventListener('abort',abort);};
@@ -76,7 +77,7 @@ export class BlockViewer{
     cleanup();
     if(data.error)reject(Error(data.error));else resolve(data.result);
    };
-   worker.postMessage(file);
+   worker.postMessage({file,request});
   });
  }
 
@@ -88,19 +89,48 @@ export class BlockViewer{
   this.overview=undefined;
  }
 
- private showOverview(data:DmOverview){
+ private showOverview(data:DmOverview,legend:HTMLElement){
   const box=new T.Box3(),matrix=new T.Matrix4(),color=new T.Color();
   const mesh=new T.InstancedMesh(this.geometry,new T.MeshLambertMaterial(),data.cells.length);
-  const maxCount=Math.max(...data.cells.map(cell=>cell.count));
-  data.cells.forEach(({box:b,count},index)=>{
+  const maxCount=Math.max(1,...data.cells.map(cell=>cell.count));
+  const values=data.cells.flatMap(cell=>cell.mean===undefined?[]:[cell.mean]);
+  const min=Math.min(...values),max=Math.max(...values);
+  const categories=[...new Set(data.cells.flatMap(cell=>!cell.mixed&&cell.category!==undefined?[cell.category]:[]))].sort();
+  const palette=new Map(categories.slice(0,16).map((name,i)=>[name,new T.Color().setHSL((i*.61803398875)%1,.64,.58)]));
+  const mixed='#a4aabd',missing='#555d71',other='#cf9b59',highColor=new T.Color('#d5322b');
+  legend.replaceChildren();
+  const row=(name:string,swatch:string)=>{
+   const item=document.createElement('div'),sample=document.createElement('span');
+   sample.className='overview-swatch';sample.style.background=swatch;item.append(sample,name);legend.append(item);
+  };
+  if(data.field){
+   const heading=document.createElement('strong');heading.textContent=data.field+(data.units?' · '+data.units:'');legend.append(heading);
+   if(data.numeric&&values.length){
+    const ramp=document.createElement('div');ramp.className='overview-ramp';
+    const labels=document.createElement('div');labels.textContent=`Promedio por grupo · ${min.toLocaleString(undefined,{maximumSignificantDigits:6})} a ${max.toLocaleString(undefined,{maximumSignificantDigits:6})}`;
+    legend.append(ramp,labels);
+   }else if(!data.numeric){
+    for(const [name,color] of palette)row(name,'#'+color.getHexString());
+    if(categories.length>palette.size)row('Otras categorías',other);
+    if(data.cells.some(cell=>cell.mixed))row('Categorías mixtas',mixed);
+   }
+   if(data.cells.some(cell=>!cell.valid))row('Sin valor',missing);
+  }
+  data.cells.forEach((cell,index)=>{
+   const {box:b,count}=cell;
    const min=new T.Vector3(b[0]-this.localOrigin[0],b[2]-this.localOrigin[1],b[4]-this.localOrigin[2]);
    const max=new T.Vector3(b[1]-this.localOrigin[0],b[3]-this.localOrigin[1],b[5]-this.localOrigin[2]);
    box.expandByPoint(min).expandByPoint(max);
    matrix.makeScale(max.x-min.x,max.y-min.y,max.z-min.z).setPosition(min.add(max).multiplyScalar(.5));
    mesh.setMatrixAt(index,matrix);
-   mesh.setColorAt(index,color.setHSL(.55-.42*Math.log(count)/Math.log(Math.max(2,maxCount)),.65,.56));
+   if(!data.field)color.setHSL(.55-.42*Math.log(count)/Math.log(Math.max(2,maxCount)),.65,.56);
+   else if(!cell.valid)color.set(missing);
+   else if(data.numeric)color.set('#2468ab').lerp(highColor,max===min?0.5:(cell.mean!-min)/(max-min));
+   else if(cell.mixed)color.set(mixed);
+   else color.set(palette.get(cell.category!)??other);
+   mesh.setColorAt(index,color);
   });
-  mesh.computeBoundingSphere();
+  if(data.cells.length)mesh.computeBoundingSphere();
   this.releaseOverview();
   this.overview={data,mesh,box};this.scene.add(mesh);
   this.toggleOverview(true);
@@ -157,35 +187,76 @@ export class BlockViewer{
   const sectorButton=btn('Volver al sector',()=>{
    this.toggleOverview(false);setMode();status.textContent=describe();
   });
-  section.append(title,overviewButton,sectorButton,status,controls,cancel);
+  const analysis=document.createElement('fieldset'),analysisTitle=document.createElement('legend');
+  analysisTitle.textContent='Leyenda y filtros del modelo';analysis.append(analysisTitle);
+  const columns=this.model.columns.map(({name,numeric})=>({name,numeric}));
+  const attribute=document.createElement('select');
+  attribute.setAttribute('aria-label','Atributo de la vista general');
+  attribute.append(new Option('Cantidad de bloques',''),...columns.map(c=>new Option(c.name,c.name)));
+  const label=document.createElement('label');label.append('Colorear por ',attribute);
+  const join=sel(['AND','OR'],'AND',()=>{});join.setAttribute('aria-label','Combinar condiciones');
+  const conditions=document.createElement('div');
+  const rows:{field:HTMLSelectElement;op:HTMLSelectElement;input:HTMLInputElement}[]=[];
+  const addCondition=()=>{
+   const row=document.createElement('div');row.className='dm-overview-filter';
+   const field=sel(columns.map(c=>c.name),attribute.value||columns[0].name,()=>refresh());
+   field.setAttribute('aria-label','Atributo del filtro');
+   const op=document.createElement('select');op.setAttribute('aria-label','Operador del filtro');
+   const input=inp('','number',()=>{});input.setAttribute('aria-label','Valor del filtro');
+   const refresh=()=>{
+    const numeric=columns.find(c=>c.name===field.value)!.numeric;
+    const ops=numeric?['=','!=','>','>=','<','<=']:['=','!='];
+    op.replaceChildren(...[...ops,'null','not-null'].map(v=>new Option(v==='null'?'Sin valor':v==='not-null'?'Con valor':v,v)));
+    input.type=numeric?'number':'text';input.hidden=false;input.value='';
+   };
+   op.onchange=()=>input.hidden=['null','not-null'].includes(op.value);
+   const condition={field,op,input};rows.push(condition);
+   row.append(field,op,input,btn('Quitar',()=>{rows.splice(rows.indexOf(condition),1);row.remove();}));
+   conditions.append(row);refresh();
+  };
+  const overviewLegend=document.createElement('div');overviewLegend.className='dm-overview-legend';
+  analysis.append(label,overviewLegend,join,conditions,btn('Añadir condición',addCondition),btn('Aplicar leyenda y filtros',()=>{
+   const selected:Condition[]=[];
+   for(const {field,op,input} of rows){
+    const numeric=columns.find(c=>c.name===field.value)!.numeric;
+    if(!input.hidden&&(!input.value.trim()||!input.checkValidity())){status.textContent='Completa el valor de cada condición.';return;}
+    selected.push({field:field.value,op:op.value,...(input.hidden?{}:{value:numeric?Number(input.value):input.value})});
+   }
+   void overview({field:attribute.value||undefined,filter:selected.length?{join:join.value as 'AND'|'OR',children:selected}:undefined});
+  }),btn('Limpiar filtros',()=>{
+   rows.length=0;conditions.replaceChildren();void overview({field:attribute.value||undefined});
+  }));
+  section.append(title,overviewButton,sectorButton,status,analysis,controls,cancel);
   this.panel.prepend(section);
   const describe=()=>`${sector.request.bounds?'Búsqueda XYZ · ':'Orden del archivo · '}${this.model.count.toLocaleString()} bloques cargados · ${sector.total.toLocaleString()} en el archivo · desde el registro ${(sector.request.start+1).toLocaleString()}. Filtros y CSV del sector actual.`;
-  const describeOverview=()=>`Vista general · ${this.overview!.data.total.toLocaleString()} bloques en ${this.overview!.data.cells.length.toLocaleString()} grupos. Color por cantidad. Haz doble clic en un grupo para ver sus bloques originales.`;
+  const describeOverview=()=>`Vista general · ${this.overview!.data.total.toLocaleString()} bloques en el archivo · ${this.overview!.data.matched.toLocaleString()} coinciden · ${this.overview!.data.cells.length.toLocaleString()} grupos. Haz doble clic en un grupo para ver sus bloques originales.`;
   const setMode=()=>{
    sectorButton.hidden=!this.overviewActive;controls.hidden=this.overviewActive;
-   overviewButton.disabled=this.overviewActive;
+   overviewButton.disabled=this.overviewActive;analysis.hidden=!this.overviewActive;
   };
-  const overview=async()=>{
+  const overview=async(request=this.overviewQuery)=>{
    if(this.sectorOperation)return;
    const operation=new AbortController();
-   this.sectorOperation=operation;controls.disabled=true;overviewButton.disabled=true;cancel.hidden=false;
+   this.sectorOperation=operation;controls.disabled=true;analysis.disabled=true;overviewButton.disabled=true;sectorButton.disabled=true;cancel.hidden=false;
    status.textContent='Leyendo el modelo completo por partes…';
    try{
-    const data=this.overview?.data??this.overviewCache??await this.readOverview(sector.file,operation.signal,message=>status.textContent=message);
-    this.showOverview(data);status.textContent=describeOverview();
-   }catch(error){status.textContent=operation.signal.aborted?'Lectura cancelada. '+describe():String(error);}
-   finally{this.sectorOperation=undefined;controls.disabled=false;cancel.hidden=true;setMode();}
+    const cached=JSON.stringify(request)===JSON.stringify(this.overviewQuery)?this.overview?.data??this.overviewCache:undefined;
+    const data=cached??await this.readOverview(sector.file,request,operation.signal,message=>status.textContent=message);
+    this.overviewQuery=request;
+    this.showOverview(data,overviewLegend);status.textContent=describeOverview();
+   }catch(error){status.textContent=operation.signal.aborted?'Lectura cancelada. '+(this.overviewActive?describeOverview():describe()):String(error);}
+   finally{this.sectorOperation=undefined;controls.disabled=false;analysis.disabled=false;sectorButton.disabled=false;cancel.hidden=true;setMode();}
   };
   this.canvas.addEventListener('dblclick',event=>{
    if(!this.overviewActive||this.sectorOperation)return;
    const cell=this.overviewAt(event);
-   if(cell)void load({start:cell.first,end:cell.end,bounds:cell.center},[]);
+   if(cell)void load({start:cell.first,end:cell.end,bounds:cell.center,...(this.overviewQuery.filter?{filter:this.overviewQuery.filter}:{})},[]);
   });
   const update=()=>{previous.disabled=!sector.history.length;next.disabled=sector.next===null;};
   const load=async(request:DmSectorRequest,history:number[])=>{
    if(this.sectorOperation)return;
    const operation=new AbortController();
-   this.sectorOperation=operation;controls.disabled=true;overviewButton.disabled=true;sectorButton.disabled=true;cancel.hidden=false;
+   this.sectorOperation=operation;controls.disabled=true;analysis.disabled=true;overviewButton.disabled=true;sectorButton.disabled=true;cancel.hidden=false;
    status.textContent='Leyendo sector DM…';
    try{
     const result=await this.readSector(sector.file,request,operation.signal,message=>status.textContent=message);
@@ -204,7 +275,7 @@ export class BlockViewer{
     Object.assign(sector,{request,history,next:result.next});jump.value=String(request.start+1);
     status.textContent=describe();
    }catch(error){status.textContent=operation.signal.aborted?'Lectura cancelada. '+(this.overviewActive?describeOverview():describe()):String(error);}
-   finally{this.sectorOperation=undefined;controls.disabled=false;sectorButton.disabled=false;cancel.hidden=true;setMode();update();}
+   finally{this.sectorOperation=undefined;controls.disabled=false;analysis.disabled=false;sectorButton.disabled=false;cancel.hidden=true;setMode();update();}
   };
   status.textContent=describe();setMode();update();
  }

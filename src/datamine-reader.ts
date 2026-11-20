@@ -9,9 +9,9 @@ export function datamineHeader(buffer:ArrayBuffer,fileSize=buffer.byteLength,pro
  if(width<1)throw Error('Modelo sin registros explícitos.');const perPage=Math.floor(508/width);if(last>perPage)throw Error('Cantidad de registros finales inválida.');const count=(pages-headerPages-1)*perPage+last;if(count<1||!Number.isSafeInteger(count))throw Error('Modelo vacío.');
  return {word,little,page,pages,headerPages,defs,count,width,perPage};
 }
-export function readDatamine(buffer:ArrayBuffer,geometryOnly=false):Blocks{
+export function readDatamine(buffer:ArrayBuffer,geometryOnly=false,attributes:ReadonlySet<string>=new Set()):Blocks{
  const start=performance.now(),v=new DataView(buffer),{word,little,page,headerPages,defs:fields,count,width,perPage}=datamineHeader(buffer);
- const defs=geometryOnly?fields.filter(field=>/^([XYZ](C|INC|0|MORIG)|ANGLE[123]|ROTAXIS[123])$/i.test(field.name)):fields;
+ const defs=geometryOnly?fields.filter(field=>attributes.has(field.name)||/^([XYZ](C|INC|0|MORIG)|ANGLE[123]|ROTAXIS[123])$/i.test(field.name)):fields;
  const num=(offset:number)=>word===8?v.getFloat64(offset,little):v.getFloat32(offset,little);
  const text=(offset:number,words:number)=>{let result='';for(let i=0;i<words;i++)for(let j=0;j<4;j++)result+=String.fromCharCode(v.getUint8(offset+i*word+j));return result.replace(/\0/g,'').trimEnd();};
  const absent=(n:number)=>Math.abs(n+1e30)<=1e30*2e-7||!Number.isFinite(n)?NaN:n;const columns:Column[]=defs.map(d=>({name:d.name,numeric:d.numeric&&!/^(IJK|ZONE|DOMAIN|DOMINIO|LITHO|LITO|LITHOLOGY|CLASS|CLASE|CATE|CATVP|CATE_S)$/i.test(d.name),unit:d.unit,implicit:d.position===0?(typeof d.fallback==='number'?absent(d.fallback):d.fallback):undefined,data:d.position===0?new Float64Array(0):d.numeric?new Float64Array(count):new Array<string>(count)}));

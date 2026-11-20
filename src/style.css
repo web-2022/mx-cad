@@ -281,3 +281,8 @@ button:disabled{opacity:.35;cursor:default}
 .block-properties dd { margin:0; white-space:normal; }
 .dm-overview-active > :not(.dm-sectors) { display:none; }
 .dm-sectors fieldset[hidden] { display:none; }
+.dm-overview-filter { display:grid; grid-template-columns:1fr 1fr; gap:4px; margin:5px 0; }
+.dm-overview-filter :is(input,select) { min-width:0; width:100%; }
+.dm-overview-legend { margin:6px 0; }
+.overview-ramp { height:10px; background:linear-gradient(90deg,#2468ab,#d5322b); margin:4px 0; }
+.overview-swatch { display:inline-block; width:10px; height:10px; margin-right:6px; }
