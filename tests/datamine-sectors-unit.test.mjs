@@ -1,0 +1,47 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {makeDm} from '../scripts/block-fixture.mjs';
+import {readDmSector} from '../src/datamine-sectors.ts';
+
+test('reads the beginning and end of a logical 4 GiB Datamine file by bounded slices',async()=>{
+ const page=4096,pages=1048576,perPage=56;
+ const bytes=makeDm({rows:perPage});
+ bytes.writeDoubleLE(pages,26*8);
+ bytes.writeDoubleLE(1,27*8);
+ const source={size:page*pages,slice(start,end){
+  assert.ok(end-start<4*1024*1024,'reads at most a bounded sector');
+  const data=Buffer.alloc(end-start);
+  for(let offset=start;offset<end;offset+=page){
+   const template=offset===0?bytes.subarray(0,page):bytes.subarray(page);
+   template.copy(data,offset-start,0,Math.min(template.length,end-offset));
+  }
+  return new Blob([data]);
+ }};
+ const first=await readDmSector(source,{start:0});
+ assert.equal(first.total,(pages-2)*perPage+1);
+ assert.equal(first.model.count,25000);
+ assert.equal(first.next,25000);
+ const last=await readDmSector(source,{start:first.total-1});
+ assert.equal(last.model.count,1);
+ assert.equal(last.next,null);
+ assert.deepEqual([...last.model.positions],[500000,9000000,4800]);
+});
+
+test('spatial sector filters world coordinates and retains original attributes across DM pages',async()=>{
+ const file=new Blob([makeDm({rows:112})]);
+ const result=await readDmSector(file,{start:0,bounds:[500550,500570,9000000,9000000,4800,4800]});
+ assert.equal(result.total,112);
+ assert.equal(result.model.count,3);
+ assert.deepEqual([...result.model.columns.find(c=>c.name==='IJK').data],[56,57,58]);
+ assert.deepEqual([...result.model.positions].filter((_,i)=>i%3===0),[500550,500560,500570]);
+ const empty=await readDmSector(file,{start:0,bounds:[0,1,0,1,0,1]});
+ assert.equal(empty.model,undefined);
+});
+
+test('applies the authored Datamine rotation before filtering XYZ',async()=>{
+ const file=new Blob([makeDm({rotated:true,extra:70})]);
+ const result=await readDmSector(file,{start:0,bounds:[500013,500015,9000001,9000003,4800,4800]});
+ assert.equal(result.model.count,1);
+ assert.equal(result.model.columns.find(c=>c.name==='IJK').data[0],2);
+ assert.equal(result.model.columns.find(c=>c.name==='ATTR69').implicit,69);
+});

@@ -125,3 +125,9 @@ confirmados. Guarde `.mxproject` para continuar trabajando en otra sesión.
 ### Archivos RAR
 
 **Cargar archivos** admite RAR con modelos o planos compatibles. La extracción se ejecuta en el equipo mediante WebAssembly. Se admiten hasta 512 MiB por archivo comprimido y por contenido compatible extraído. Los RAR cifrados o de varios volúmenes se deben extraer primero. El límite de guardado de archivos dentro de un proyecto sigue siendo 128 MB.
+
+### Modelos DM grandes
+
+Abre el `.dm` extraído directamente en **Cargar archivos**. A partir de 128 MiB, MX CAD lee el archivo local por páginas y mantiene un solo sector visible en memoria. Usa **Anterior**, **Siguiente** o **Ir al registro** para navegar por el orden del archivo, o **Buscar por coordenadas XYZ** para cargar centros de bloques dentro de un rango en coordenadas de mundo. La búsqueda puede recorrer el archivo completo y se puede cancelar. Si el rango supera la capacidad de un sector, **Siguiente** continúa la búsqueda.
+
+Los filtros, estadísticas y exportaciones CSV se aplican al sector cargado. Los DM grandes se consultan individualmente. El proyecto portátil conserva su límite existente de 128 MB de archivos; el RAR conserva su límite de extracción. Se admite el mismo formato DM heredado de 32 o 64 bits que utiliza el lector ordinario.

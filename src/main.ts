@@ -255,7 +255,7 @@ async function openBim(file:File,companions:File[],state?:any){
   try{
     const blockFile=/\.(dm|dmx|csv|txt|tsv)$/i.test(file.name);
     if(blockFile){const {BlockViewer}=await import('./block-viewer');candidate=new BlockViewer(host);}else{const {BimViewer}=await import('./bim-viewer');candidate=new BimViewer(host);}
-    if(signal.aborted)throw new DOMException('Cancelado','AbortError');const result=await (candidate as any).load(file,companions,signal,(message:string)=>el('progress-text').textContent=message,state?.block?.tableSpec);
+    if(signal.aborted)throw new DOMException('Cancelado','AbortError');const result=await (candidate as any).load(file,companions,signal,(message:string)=>el('progress-text').textContent=message,state?.block?.tableSpec,state?.block?.dmSector);
     closeBim();document.querySelector('.shell')!.classList.remove('project-composite');view3D?.destroy();view3D=undefined;is3D=false;bim=candidate;bimHost=host;if('mountTools'in candidate)candidate.mountTools(el('model-tools'));viewer.clear();documentModel=undefined;originalFile=undefined;active=false;sourceStyleDirty=false;tools?.reset(true);host.style.visibility='';el('viewer-bim').hidden=false;document.querySelector('.shell')!.classList.add('bim-mode');
     el('wire-info').hidden=true;el('viewer').hidden=true;el('viewer-paper').hidden=true;el('viewer-3d').hidden=true;el('empty').hidden=true;el('paper-info').hidden=true;el('drawing-region').hidden=true;el('layout-tabs').hidden=true;
     document.querySelectorAll<HTMLElement>('.cad-overlay,.cad-command').forEach(n=>n.hidden=true);el('viewport').dataset.view3d='true';

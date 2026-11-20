@@ -1,3 +1,4 @@
+import {largeDm} from './datamine-sectors';
 import {draftStore,validateDrafts} from './drafting-data';
 import type { Blocks } from './block-data';
 import type { MixedInput } from './mixed-types';
@@ -130,7 +131,7 @@ export class ProjectManager {
                 }else added.push(e);
             }
             if(!added.length)return;
-            if (this.entries.filter(e => /\.(dwg|dxf|dm|dmx|csv|txt|tsv)$/i.test(e.file.name)).length > 1) {
+            if (!this.entries.some(e=>largeDm(e.file)) && this.entries.filter(e => /\.(dwg|dxf|dm|dmx|csv|txt|tsv)$/i.test(e.file.name)).length > 1) {
                 if (!await this.combine(true, undefined, previousScene)) {
                     const all = this.entries, selection = this.selected;
                     this.entries = all.filter(e => previousIDs.has(e.id));
@@ -227,6 +228,10 @@ export class ProjectManager {
     async combine(force = false, activeID?: string, preserve?: any) {
         if (this.busy && !force)
             return;
+        if (this.entries.some(e=>largeDm(e.file))) {
+            this.adapter.notice('Los archivos DM grandes se consultan individualmente por sectores.',true);
+            return false;
+        }
         this.close();
         this.busy = true;
         this.snapshot();

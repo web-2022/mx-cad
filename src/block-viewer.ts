@@ -1,3 +1,4 @@
+import {largeDm,type DmBounds,type DmSectorRequest,type readDmSector} from './datamine-sectors';
 import {draftProjection,draftCapture} from './three-drafting';
 import {MixedLayers} from './mixed-layers';
 import type {MixedInput,MixedState,SceneSetting} from './mixed-types';
@@ -13,13 +14,104 @@ export class BlockViewer{
  readonly canvas:HTMLCanvasElement;private stage=document.createElement('div');private panel=document.createElement('aside');private scene=new T.Scene();private renderer:any;private camera:any;private orbit:any;private mesh:any;private geometry=new T.BoxGeometry(1,1,1);private material:any;private outline:any;private observer:ResizeObserver;private frame=0;private worker?:Worker;private source?:Blocks;private basis:any;private localOrigin:number[]=[0,0,0];private centers=new Float64Array();private index?:BlockIndex;private rows:number[]=[];private visible=new Uint8Array();private selected?:number;private hidden=new Set<number>();private isolate?:number;private spatial:Record<string,[number,number]>={};private clips:Record<string,[number,number]>={};private filtered:number[]=[];private filter:Filter={join:'AND',children:[]};private draft:Filter=structuredClone(this.filter);private legends:Legend[]=[];private active=0;private library=document.createElement('div');private editor=document.createElement('div');private filterUI=document.createElement('div');private stats=document.createElement('pre');private props=document.createElement('div');private status=document.createElement('p');private error=document.createElement('p');private state=document.createElement('p');private legendBox=document.createElement('section');private legendContent=document.createElement('div');private pointer?:{x:number;y:number};private name='bloques';
  readonly metrics={prepareMs:0,filterMs:0,recolorMs:0,pickMs:0,drawSubmitMs:0,geometryBuilds:1};
  constructor(private host:HTMLElement){host.classList.add('block-surface');this.stage.className='block-stage';this.panel.className='block-panel';this.filterUI.className='block-filters';this.editor.className='block-legend-editor';this.library.className='block-library';this.status.className='block-counts';this.props.className='block-properties';host.append(this.stage,this.panel);this.renderer=new T.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});this.canvas=this.renderer.domElement;this.canvas.setAttribute('aria-label','Modelo de bloques');this.renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));this.renderer.localClippingEnabled=true;this.stage.append(this.canvas);this.scene.background=new T.Color('#111d31');this.camera=new T.OrthographicCamera(-1,1,1,-1,.01,1e9);this.camera.up.set(0,0,1);this.camera.position.set(1,-1,1);this.orbit=new OrbitControls(this.camera,this.canvas);this.orbit.mouseButtons.MIDDLE=T.MOUSE.PAN;this.orbit.addEventListener('change',()=>this.request());this.scene.add(new T.HemisphereLight(0xffffff,0x3a465a,2));const sun=new T.DirectionalLight(0xffffff,2);sun.position.set(1,-2,3);this.scene.add(sun);this.material=new T.MeshLambertMaterial({color:0xffffff});this.outline=new T.LineSegments(new T.EdgesGeometry(this.geometry),new T.LineBasicMaterial({color:'#ffff00',depthTest:false}));this.outline.visible=false;this.outline.renderOrder=10;this.scene.add(this.outline);this.observer=new ResizeObserver(()=>this.resize());this.observer.observe(this.stage);this.canvas.onpointerdown=e=>this.pointer={x:e.clientX,y:e.clientY};this.canvas.onpointerup=e=>{if(e.button===0&&this.pointer&&Math.hypot(e.clientX-this.pointer.x,e.clientY-this.pointer.y)<4){const active=this.pick(e.clientX,e.clientY),other=this.mixedPick(e.clientX,e.clientY);if(other&&other.distance<(active?.distance??Infinity)){this.select(undefined);document.getElementById('viewport')?.dispatchEvent(new CustomEvent('mx:objectselect',{detail:other}));const p=other.point;this.props.textContent=other.name+' · Norte: '+(p.y+this.localOrigin[1])+' · Este: '+(p.x+this.localOrigin[0])+' · Elevación: '+((p.z??0)+this.localOrigin[2])+(other.attributes?'\n'+JSON.stringify(other.attributes,null,2):'');}else this.select(active?.row);}this.pointer=undefined;};this.canvas.onpointercancel=()=>this.pointer=undefined;}
- async load(file:File,_companions:File[],signal:AbortSignal,progress:(s:string)=>void,tableSpec?:any){this.name=file.name.replace(/\.[^.]+$/,'');progress('Leyendo modelo de bloques local…');let model:Blocks;
+ async load(file:File,_companions:File[],signal:AbortSignal,progress:(s:string)=>void,tableSpec?:any,dmSector?:DmSectorRequest){this.name=file.name.replace(/\.[^.]+$/,'');progress('Leyendo modelo de bloques local…');let model:Blocks;
  if(/\.dmx$/i.test(file.name))throw Error('DMX no soportado. Usa DM heredado o una exportación CSV delimitada. No renombres DMX a DM.');
+ if(largeDm(file)){
+  const request=dmSector??{start:0};
+  const result=await this.readSector(file,request,signal,progress);
+  if(!result.model)throw Error('El sector no contiene bloques.');
+  this.sector={file,request,total:result.total,next:result.next,history:[]};
+  const model=await this.loadModel(result.model,file.name,signal,progress);
+  this.mountSectorControls();
+  return model;
+ }
  if(/\.dm$/i.test(file.name)){const bytes=await file.arrayBuffer();model=await new Promise<Blocks>((resolve,reject)=>{const worker=this.worker=new Worker(new URL('./block-worker.ts',import.meta.url),{type:'module'});const cleanup=()=>{worker.terminate();this.worker=undefined;signal.removeEventListener('abort',abort);};const abort=()=>{cleanup();reject(new DOMException('Cancelado','AbortError'));};signal.addEventListener('abort',abort,{once:true});worker.onerror=()=>{cleanup();reject(Error('Error del lector DM local.'));};worker.onmessage=e=>{cleanup();e.data.error?reject(Error(e.data.error)):resolve(e.data.model);};if(signal.aborted){abort();return;}worker.postMessage(bytes,[bytes]);});}
  else {const {importTable,readTable}=await import('./block-table');const result=tableSpec?readTable(await file.text(),tableSpec):await importTable(file,signal);if(!result)throw new DOMException('Importación cancelada','AbortError');model=result;}
  return this.loadModel(model,file.name,signal,progress);}
- async loadModel(model:Blocks,name:string,signal:AbortSignal,progress:(s:string)=>void,origin=model.origin){this.name=name.replace(/\.[^.]+$/,'');if(signal.aborted)throw new DOMException('Cancelado','AbortError');this.source=model;this.legends=[defaultLegend(model)];progress('Preparando instancias y selección espacial…');await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));const start=performance.now();this.localOrigin=[...origin];this.basis=new T.Matrix4().set(model.basis[0],model.basis[3],model.basis[6],0,model.basis[1],model.basis[4],model.basis[7],0,model.basis[2],model.basis[5],model.basis[8],0,0,0,0,1);this.mesh=new T.InstancedMesh(this.geometry,this.material,model.count);this.mesh.frustumCulled=false;this.mesh.count=0;this.scene.add(this.mesh);this.centers=new Float64Array(model.count*3);const boxes:Box[]=[];for(let i=0;i<model.count;i++){const c=inverse([0,1,2].map(a=>model.positions[i*3+a]-this.localOrigin[a]),model.basis);this.centers.set(c,i*3);boxes.push({row:i,min:c.map((v,a)=>v-model.sizes[i*3+a]/2),max:c.map((v,a)=>v+model.sizes[i*3+a]/2)});}this.index=new BlockIndex(boxes);this.visible=new Uint8Array(model.count);this.makeUI();this.apply();this.metrics.prepareMs=performance.now()-start;this.resize();this.fit();return{format:model.format,count:model.count};}
- modelData(){return this.model;}
+ async loadModel(model:Blocks,name:string,signal:AbortSignal,progress:(s:string)=>void,origin=model.origin){this.name=name.replace(/\.[^.]+$/,'');if(signal.aborted)throw new DOMException('Cancelado','AbortError');progress('Preparando instancias y selección espacial…');
+ await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+ if(signal.aborted)throw new DOMException('Cancelado','AbortError');
+ const start=performance.now(),first=!this.source,fileVisible=this.mesh?.visible??true;
+ if(!first){
+  const numeric=new Map(this.model.columns.map(c=>[c.name,c.numeric]));
+  model.columns.forEach(c=>c.numeric=numeric.get(c.name)??c.numeric);
+  this.scene.remove(this.mesh);this.mesh.dispose();this.rows=[];this.hidden.clear();this.isolate=undefined;this.select();
+ }
+ this.source=model;if(first)this.legends=[defaultLegend(model)];this.localOrigin=[...origin];this.basis=new T.Matrix4().set(model.basis[0],model.basis[3],model.basis[6],0,model.basis[1],model.basis[4],model.basis[7],0,model.basis[2],model.basis[5],model.basis[8],0,0,0,0,1);this.mesh=new T.InstancedMesh(this.geometry,this.material,model.count);this.mesh.frustumCulled=false;this.mesh.visible=fileVisible;this.mesh.count=0;this.scene.add(this.mesh);this.centers=new Float64Array(model.count*3);const boxes:Box[]=[];for(let i=0;i<model.count;i++){const c=inverse([0,1,2].map(a=>model.positions[i*3+a]-this.localOrigin[a]),model.basis);this.centers.set(c,i*3);boxes.push({row:i,min:c.map((v,a)=>v-model.sizes[i*3+a]/2),max:c.map((v,a)=>v+model.sizes[i*3+a]/2)});}this.index=new BlockIndex(boxes);this.visible=new Uint8Array(model.count);if(first)this.makeUI();else{this.updateClips();this.renderFilters();}this.apply();this.metrics.prepareMs=performance.now()-start;this.resize();this.fit();return{format:model.format,count:model.count};}
+ modelData(){return this.sector?undefined:this.model;}
+ private sector?:{file:File;request:DmSectorRequest;total:number;next:number|null;history:number[]};
+ private sectorOperation?:AbortController;
+
+ private readSector(file:File,request:DmSectorRequest,signal:AbortSignal,progress:(message:string)=>void){
+  return new Promise<Awaited<ReturnType<typeof readDmSector>>>((resolve,reject)=>{
+   if(signal.aborted){reject(new DOMException('Cancelado','AbortError'));return;}
+   const worker=new Worker(new URL('./dm-sector-worker.ts',import.meta.url),{type:'module'});
+   const cleanup=()=>{worker.terminate();signal.removeEventListener('abort',abort);};
+   const abort=()=>{cleanup();reject(new DOMException('Cancelado','AbortError'));};
+   signal.addEventListener('abort',abort,{once:true});
+   worker.onerror=()=>{cleanup();reject(Error('Falló el lector de sectores DM.'));};
+   worker.onmessage=({data})=>{
+    if(data.scanned!==undefined){progress(`Leyendo registros DM: ${data.scanned.toLocaleString()} de ${data.total.toLocaleString()}`);return;}
+    cleanup();
+    if(data.error)reject(Error(data.error));else resolve(data.result);
+   };
+   worker.postMessage({file,request});
+  });
+ }
+
+ private mountSectorControls(){
+  const sector=this.sector!;
+  const section=document.createElement('section');section.className='dm-sectors';
+  const title=document.createElement('h3');title.textContent='Sectores del archivo DM';
+  const status=document.createElement('p');status.setAttribute('role','status');
+  const controls=document.createElement('fieldset');
+  const previous=btn('Anterior',()=>{void load({...sector.request,start:sector.history.at(-1)!},sector.history.slice(0,-1));});
+  const next=btn('Siguiente',()=>{void load({...sector.request,start:sector.next!},[...sector.history,sector.request.start]);});
+  const reset=btn('Inicio del archivo',()=>{void load({start:0},[]);});
+  const jump=inp(String(sector.request.start+1),'number',()=>{});
+  jump.min='1';jump.max=String(sector.total);jump.step='1';jump.setAttribute('aria-label','Registro desde el que cargar');
+  const jumpLabel=document.createElement('label');jumpLabel.append('Cargar desde el registro ',jump);
+  controls.append(previous,next,reset,jumpLabel,btn('Ir al registro',()=>{
+   if(!jump.value||!jump.checkValidity()){status.textContent='Introduce un número de registro válido.';return;}
+   void load({start:Number(jump.value)-1},[]);
+  }));
+  const spatial=document.createElement('details'),summary=document.createElement('summary');
+  summary.textContent='Buscar por coordenadas XYZ';spatial.append(summary);
+  const fields=['X mínima','X máxima','Y mínima','Y máxima','Z mínima','Z máxima'].map((name,index)=>{
+   const label=document.createElement('label'),input=inp(String(sector.request.bounds?.[index]??''),'number',()=>{});
+   label.append(name,' ',input);spatial.append(label);return input;
+  });
+  const search=btn('Buscar sector',()=>{
+   if(fields.some(field=>!field.value.trim()||!field.checkValidity())){status.textContent='Introduce los seis límites del sector.';return;}
+   void load({start:0,bounds:fields.map(field=>Number(field.value)) as DmBounds},[]);
+  });
+  spatial.append(search);controls.append(spatial);
+  const cancel=btn('Cancelar lectura',()=>this.sectorOperation?.abort());cancel.hidden=true;
+  section.append(title,status,controls,cancel);
+  this.panel.prepend(section);
+  const describe=()=>`${sector.request.bounds?'Búsqueda XYZ · ':'Orden del archivo · '}${this.model.count.toLocaleString()} bloques cargados · ${sector.total.toLocaleString()} en el archivo · desde el registro ${(sector.request.start+1).toLocaleString()}. Filtros y CSV del sector actual.`;
+  const update=()=>{previous.disabled=!sector.history.length;next.disabled=sector.next===null;};
+  const load=async(request:DmSectorRequest,history:number[])=>{
+   if(this.sectorOperation)return;
+   const operation=new AbortController();
+   this.sectorOperation=operation;controls.disabled=true;cancel.hidden=false;
+   status.textContent='Leyendo sector DM…';
+   try{
+    const result=await this.readSector(sector.file,request,operation.signal,message=>status.textContent=message);
+    if(!result.model){
+     if(request.bounds&&sector.request.bounds&&request.start===sector.next)sector.next=null;
+     status.textContent='Sin bloques en el rango solicitado. '+describe();return;
+    }
+    cancel.hidden=true;
+    await this.loadModel(result.model,sector.file.name,operation.signal,message=>status.textContent=message);
+    Object.assign(sector,{request,history,next:result.next});jump.value=String(request.start+1);
+    status.textContent=describe();
+   }catch(error){status.textContent=operation.signal.aborted?'Lectura cancelada. '+describe():String(error);}
+   finally{this.sectorOperation=undefined;controls.disabled=false;cancel.hidden=true;update();}
+  };
+  status.textContent=describe();update();
+ }
+
  private draftBlock?:any;
  private mixedCad:MixedInput['cad']=[];
  private mixed?:MixedLayers;private mixedActive?:string;private activeOpacity=1;private activeTint?:string;
@@ -94,7 +186,7 @@ export class BlockViewer{
  restoreMixed(s:MixedState){if(!this.mixed||s.active!==this.mixedActive||!Array.isArray(s.origin)||s.origin.length!==3||s.origin.some((n,i)=>!Number.isFinite(n)||Math.abs(n-this.localOrigin[i])>1e-6))throw Error('La escena guardada no corresponde al origen o modelo activo.');this.mixed.restore(s.settings);}
  mixedMetrics(){return this.mixed?{...this.mixed.metrics,activeBlocks:this.mesh.visible?this.mesh.count:0,origin:[...this.localOrigin],files:Object.keys(this.mixed.settings()).length,drawCalls:this.renderer.info.render.calls}:undefined;}
  private mixedPick(x:number,y:number){if(!this.mixed)return;const r=this.canvas.getBoundingClientRect();if(x<r.left||x>r.right||y<r.top||y>r.bottom)return;this.camera.updateMatrixWorld();const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2((x-r.left)/r.width*2-1,1-(y-r.top)/r.height*2),this.camera);return this.mixed.pick(ray.ray.origin,ray.ray.direction);}
- getSession(){return{wire:!!this.material.wireframe,legendCollapsed:this.legendContent.hidden,legendPosition:{left:this.legendBox.style.left,top:this.legendBox.style.top},config:config(this.legends,this.filter,this.model),active:this.active,spatial:this.spatial,clips:this.clips,hidden:[...this.hidden],isolate:this.isolate??null,tableSpec:this.model.tableSpec??null};}
+ getSession(){return{...(this.sector?{dmSector:this.sector.request}:{}),wire:!!this.material.wireframe,legendCollapsed:this.legendContent.hidden,legendPosition:{left:this.legendBox.style.left,top:this.legendBox.style.top},config:config(this.legends,this.filter,this.model),active:this.active,spatial:this.spatial,clips:this.clips,hidden:[...this.hidden],isolate:this.isolate??null,tableSpec:this.model.tableSpec??null};}
  restoreSession(s:any){this.material.wireframe=s.wire===true;this.material.needsUpdate=true;const representation=this.panel.querySelector('select[aria-label="Representación"]') as HTMLSelectElement;if(representation)representation.value=this.material.wireframe?'Wireframe':'Sólido';this.legendContent.hidden=s.legendCollapsed===true;for(const[k,maximum]of [['left',this.stage.clientWidth-60],['top',this.stage.clientHeight-30]] as const){const value=s.legendPosition?.[k];if(typeof value==='string'&&/^\d+(?:\.\d+)?px$/.test(value)){this.legendBox.style[k]=Math.max(0,Math.min(maximum,parseFloat(value)))+'px';this.legendBox.style.bottom='auto';}}const c=readConfig(this.model,s.config);const ranges=(value:any)=>{if(!value||typeof value!=='object'||Array.isArray(value))throw Error('Franjas no válidas.');for(const[k,r]of Object.entries<any>(value))if(!['x','y','z'].includes(k)||!Array.isArray(r)||r.length!==2||!r.every(Number.isFinite)||r[0]>r[1])throw Error('Rango espacial no válido.');return value;};if(!Array.isArray(s.hidden)||s.hidden.some((i:any)=>!Number.isInteger(i)||i<0||i>=this.model.count)||s.isolate!==null&&(!Number.isInteger(s.isolate)||s.isolate<0||s.isolate>=this.model.count))throw Error('Selección de bloques no válida.');this.spatial=ranges(s.spatial);this.clips=ranges(s.clips);if(c.fieldTypes)for(const[name,numeric]of Object.entries(c.fieldTypes))column(this.model,name).numeric=numeric;this.legends=c.legends;this.active=Number.isInteger(s.active)&&s.active>=0&&s.active<c.legends.length?s.active:0;this.filter=c.filter;this.draft=structuredClone(c.filter);this.hidden=new Set(s.hidden);this.isolate=s.isolate??undefined;this.panel.querySelectorAll<HTMLInputElement>('[data-project-cut]').forEach(i=>{const[t,k,a]=i.dataset.projectCut!.split('|'),r=(t==='Franjas'?this.spatial:this.clips)[k];i.value=r?String(r[Number(a)]):'';});this.panel.querySelectorAll<HTMLSelectElement>('[data-field-type]').forEach(s=>s.value=column(this.model,s.dataset.fieldType!).numeric?'Numérico':'Categórico');this.renderFilters();this.renderLibrary();this.renderEditor();this.updateClips();this.apply();}
  getWorldOrigin(){return [...this.localOrigin];}
  getState(){return{up:this.camera.up.toArray(),position:this.camera.position.toArray(),target:this.orbit.target.toArray(),zoom:this.camera.zoom,left:this.camera.left,right:this.camera.right,top:this.camera.top,bottom:this.camera.bottom,near:this.camera.near,far:this.camera.far};}
@@ -114,5 +206,5 @@ export class BlockViewer{
  setFileVisible(visible:boolean){this.mesh.visible=visible;if(!visible)this.escape();this.request();}
  setCadLayer(id:string,name:string,visible:boolean){this.mixed?.setCadLayer(id,name,visible);}
  mountTools(target:HTMLElement){target.replaceChildren(this.panel);}
- destroy(){this.panel.remove();this.mixed?.dispose();cancelAnimationFrame(this.frame);this.worker?.terminate();this.observer.disconnect();this.orbit.dispose();this.geometry.dispose();this.material.dispose();this.mesh?.dispose();this.outline.geometry.dispose();this.outline.material.dispose();this.renderer.dispose();this.renderer.forceContextLoss();this.host.replaceChildren();this.source=undefined;this.index=undefined;}
+ destroy(){this.panel.remove();this.mixed?.dispose();cancelAnimationFrame(this.frame);this.sectorOperation?.abort();this.worker?.terminate();this.observer.disconnect();this.orbit.dispose();this.geometry.dispose();this.material.dispose();this.mesh?.dispose();this.outline.geometry.dispose();this.outline.material.dispose();this.renderer.dispose();this.renderer.forceContextLoss();this.host.replaceChildren();this.source=undefined;this.index=undefined;}
 }
