@@ -286,3 +286,7 @@ button:disabled{opacity:.35;cursor:default}
 .dm-overview-legend { margin:6px 0; }
 .overview-ramp { height:10px; background:linear-gradient(90deg,#2468ab,#d5322b); margin:4px 0; }
 .overview-swatch { display:inline-block; width:10px; height:10px; margin-right:6px; }
+.dm-legend-limits { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:4px 8px; }
+.dm-legend-limits input { width:100%; min-width:0; }
+.dm-legend-interval { margin:6px 0; }
+.dm-overview-filter input[hidden] { display:none; }

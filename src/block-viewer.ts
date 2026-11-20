@@ -22,8 +22,10 @@ export class BlockViewer{
   const result=await this.readSector(file,request,signal,progress);
   if(!result.model)throw Error('El sector no contiene bloques.');
   this.sector={file,request,total:result.total,next:result.next,history:[]};
+  const firstSector=request.start===0&&request.end===undefined&&!request.bounds&&!request.filter;
+  const overview=firstSector?await this.readOverview(file,{},signal,progress):undefined;
   const model=await this.loadModel(result.model,file.name,signal,progress);
-  this.mountSectorControls();
+  this.mountSectorControls(overview);
   return model;
  }
  if(/\.dm$/i.test(file.name)){const bytes=await file.arrayBuffer();model=await new Promise<Blocks>((resolve,reject)=>{const worker=this.worker=new Worker(new URL('./block-worker.ts',import.meta.url),{type:'module'});const cleanup=()=>{worker.terminate();this.worker=undefined;signal.removeEventListener('abort',abort);};const abort=()=>{cleanup();reject(new DOMException('Cancelado','AbortError'));};signal.addEventListener('abort',abort,{once:true});worker.onerror=()=>{cleanup();reject(Error('Error del lector DM local.'));};worker.onmessage=e=>{cleanup();e.data.error?reject(Error(e.data.error)):resolve(e.data.model);};if(signal.aborted){abort();return;}worker.postMessage(bytes,[bytes]);});}
@@ -68,6 +70,7 @@ export class BlockViewer{
 
  private readOverview(file:File,request:DmOverviewRequest,signal:AbortSignal,progress:(message:string)=>void){
   return new Promise<DmOverview>((resolve,reject)=>{
+   if(signal.aborted){reject(new DOMException('Cancelado','AbortError'));return;}
    const worker=new Worker(new URL('./dm-overview-worker.ts',import.meta.url),{type:'module'});
    const cleanup=()=>{worker.terminate();signal.removeEventListener('abort',abort);};
    const abort=()=>{cleanup();reject(new DOMException('Cancelado','AbortError'));};
@@ -174,7 +177,7 @@ export class BlockViewer{
   return instance===undefined?undefined:this.overview.data.cells[instance];
  }
 
- private mountSectorControls(){
+ private mountSectorControls(initialOverview?:DmOverview){
   const sector=this.sector!;
   const section=document.createElement('section');section.className='dm-sectors';
   const title=document.createElement('h3');title.textContent='Sectores del archivo DM';
@@ -203,7 +206,7 @@ export class BlockViewer{
   spatial.append(search);controls.append(spatial);
   const cancel=btn('Cancelar lectura',()=>this.sectorOperation?.abort());cancel.hidden=true;
   const overviewButton=btn('Vista general',()=>{void overview();});
-  const sectorButton=btn('Volver al sector',()=>{
+  const sectorButton=btn('Ver sector cargado',()=>{
    this.toggleOverview(false);setMode();status.textContent=describe();
   });
   const analysis=document.createElement('fieldset'),analysisTitle=document.createElement('legend');
@@ -213,29 +216,34 @@ export class BlockViewer{
   attribute.setAttribute('aria-label','Atributo de la vista general');
   attribute.append(new Option('Cantidad de bloques',''),...columns.map(c=>new Option(c.name,c.name)));
   const label=document.createElement('label');label.append('Colorear por ',attribute);
-  const join=sel(['AND','OR'],'AND',()=>{});join.setAttribute('aria-label','Combinar condiciones');
+  const join=document.createElement('select');join.setAttribute('aria-label','Combinar condiciones');
+  join.append(new Option('Cumplir todas (AND)','AND'),new Option('Cumplir cualquiera (OR)','OR'));
+  const filterHeading=document.createElement('h4');filterHeading.textContent='Filtros por atributo';
   const conditions=document.createElement('div');
-  const rows:{field:HTMLSelectElement;op:HTMLSelectElement;input:HTMLInputElement}[]=[];
+  const rows:{field:HTMLSelectElement;op:HTMLSelectElement;input:HTMLInputElement;upper:HTMLInputElement;enabled:HTMLInputElement}[]=[];
   const addCondition=()=>{
    const row=document.createElement('div');row.className='dm-overview-filter';
    const field=sel(columns.map(c=>c.name),attribute.value||columns[0].name,()=>refresh());
    field.setAttribute('aria-label','Atributo del filtro');
    const op=document.createElement('select');op.setAttribute('aria-label','Operador del filtro');
    const input=inp('','number',()=>{});input.setAttribute('aria-label','Valor del filtro');
+   const upper=inp('','number',()=>{});upper.setAttribute('aria-label','Máximo del filtro');upper.placeholder='Máximo';upper.hidden=true;
+   const enabled=inp('','checkbox',()=>{});enabled.checked=true;
+   const toggle=document.createElement('label');toggle.append(enabled,' Activa');
    const refresh=()=>{
     const numeric=columns.find(c=>c.name===field.value)!.numeric;
-    const ops=numeric?['=','!=','>','>=','<','<=']:['=','!='];
-    op.replaceChildren(...[...ops,'null','not-null'].map(v=>new Option(v==='null'?'Sin valor':v==='not-null'?'Con valor':v,v)));
-    input.type=numeric?'number':'text';input.hidden=false;input.value='';
+    const ops=numeric?['=','!=','>','>=','<','<=','between']:['=','!='];
+    op.replaceChildren(...[...ops,'null','not-null'].map(v=>new Option(v==='null'?'Sin valor':v==='not-null'?'Con valor':v==='between'?'Entre (inclusive)':v,v)));
+    input.type=numeric?'number':'text';input.hidden=false;input.value='';upper.hidden=true;upper.value='';input.placeholder='Valor';
    };
-   op.onchange=()=>input.hidden=['null','not-null'].includes(op.value);
-   const condition={field,op,input};rows.push(condition);
-   row.append(field,op,input,btn('Quitar',()=>{rows.splice(rows.indexOf(condition),1);row.remove();}));
+   op.onchange=()=>{input.hidden=['null','not-null'].includes(op.value);upper.hidden=op.value!=='between';input.placeholder=upper.hidden?'Valor':'Mínimo';};
+   const condition={field,op,input,upper,enabled};rows.push(condition);
+   row.append(field,op,input,upper,toggle,btn('Quitar',()=>{rows.splice(rows.indexOf(condition),1);row.remove();}));
    conditions.append(row);refresh();
   };
   const overviewLegend=document.createElement('div');overviewLegend.className='dm-overview-legend';
   const legendEditor=document.createElement('details'),legendSummary=document.createElement('summary'),legendFields=document.createElement('div');
-  legendSummary.textContent='Editar escala y rangos';legendEditor.append(legendSummary,legendFields);legendEditor.hidden=true;
+  legendSummary.textContent='Editar escala y rangos';legendEditor.open=true;legendEditor.append(legendSummary,legendFields);legendEditor.hidden=true;
   const editLegend=()=>{
    const data=this.overview?.data;
    legendEditor.hidden=!data?.numeric;
@@ -252,7 +260,12 @@ export class BlockViewer{
    const redraw=()=>{
     fields.replaceChildren();
     const mode=sel(['Continua','Por intervalos'],draft.mode==='intervals'?'Por intervalos':'Continua',v=>{
-     draft.mode=v==='Continua'?'continuous':'intervals';redraw();
+     draft.mode=v==='Continua'?'continuous':'intervals';
+     if(draft.mode==='intervals'&&!draft.entries.length){
+      try{draft.entries=equalOverviewIntervals(draft,5);error.textContent='';}
+      catch(e){error.textContent=e instanceof Error?e.message:String(e);}
+     }
+     redraw();
     });
     field(fields,'Escala',mode);
     field(fields,draft.mode==='intervals'?'Mínimo para generar':'Mínimo',number(draft.min,v=>draft.min=v));
@@ -271,19 +284,28 @@ export class BlockViewer{
      try{draft.entries=equalOverviewIntervals(draft,count);redraw();error.textContent='';}
      catch(e){error.textContent=e instanceof Error?e.message:String(e);}
     }));
+    const intervals=document.createElement('div');intervals.className='dm-legend-intervals';
     draft.entries.forEach((entry,i)=>{
-     const group=document.createElement('fieldset'),heading=document.createElement('legend');
+     const group=document.createElement('fieldset'),heading=document.createElement('legend');group.className='dm-legend-interval';
      heading.textContent=`Intervalo ${i+1}`;group.append(heading);
      field(group,'Etiqueta',inp(entry.label,'text',v=>entry.label=v));
-     field(group,'Desde',number(entry.min,v=>entry.min=v));
-     field(group,'Hasta',number(entry.max,v=>entry.max=v));
-     field(group,'Color',inp(entry.color,'color',v=>entry.color=v));
+     const limits=document.createElement('div');limits.className='dm-legend-limits';
+     field(limits,'Desde',number(entry.min,v=>entry.min=v));
+     field(limits,'Hasta',number(entry.max,v=>entry.max=v));
+     const swatch=inp(entry.color,'color',v=>entry.color=v);
+     const hex=inp(entry.color,'text',v=>{
+      entry.color=v.trim();
+      if(/^#[0-9a-f]{6}$/i.test(entry.color))swatch.value=entry.color;
+     });
+     hex.maxLength=7;
+     swatch.oninput=()=>{entry.color=swatch.value;hex.value=swatch.value;};
+     field(limits,'Color',swatch);field(limits,'Código HEX',hex);group.append(limits);
      const inclusive=inp('','checkbox',()=>entry.inclusive=inclusive.checked);inclusive.checked=!!entry.inclusive;
      field(group,'Incluir el límite superior',inclusive);
      group.append(btn('Quitar intervalo',()=>{draft.entries.splice(i,1);redraw();}));
-     fields.append(group);
+     intervals.append(group);
     });
-    fields.append(btn('Añadir intervalo',()=>{
+    fields.append(intervals,btn('Añadir intervalo',()=>{
      if(draft.entries.length>=64){error.textContent='Se admiten hasta 64 intervalos.';return;}
      draft.entries.push({label:'',color:draft.high,min:draft.entries.at(-1)?.max??draft.min,max:undefined});
      redraw();
@@ -317,12 +339,17 @@ export class BlockViewer{
    }),btn('Cargar leyenda JSON',()=>upload.click()),upload);
    redraw();
   };
-  analysis.append(label,overviewLegend,legendEditor,join,conditions,btn('Añadir condición',addCondition),btn('Aplicar leyenda y filtros',()=>{
-   const selected:Condition[]=[];
-   for(const {field,op,input} of rows){
+  attribute.onchange=()=>void overview({...this.overviewQuery,field:attribute.value||undefined});
+  analysis.append(label,overviewLegend,legendEditor,filterHeading,join,conditions,btn('Añadir condición',addCondition),btn('Aplicar filtros',()=>{
+   const selected:(Filter|Condition)[]=[];
+   for(const {field,op,input,upper,enabled} of rows){
+    if(!enabled.checked)continue;
     const numeric=columns.find(c=>c.name===field.value)!.numeric;
     if(!input.hidden&&(!input.value.trim()||!input.checkValidity())){status.textContent='Completa el valor de cada condición.';return;}
-    selected.push({field:field.value,op:op.value,...(input.hidden?{}:{value:numeric?Number(input.value):input.value})});
+    if(op.value==='between'){
+     if(!upper.value.trim()||!upper.checkValidity()||Number(input.value)>Number(upper.value)){status.textContent='Introduce un mínimo y un máximo válidos para Entre.';return;}
+     selected.push({join:'AND',children:[{field:field.value,op:'>=',value:Number(input.value)},{field:field.value,op:'<=',value:Number(upper.value)}]});
+    }else selected.push({field:field.value,op:op.value,...(input.hidden?{}:{value:numeric?Number(input.value):input.value})});
    }
    void overview({field:attribute.value||undefined,filter:selected.length?{join:join.value as 'AND'|'OR',children:selected}:undefined});
   }),btn('Limpiar filtros',()=>{
@@ -347,7 +374,7 @@ export class BlockViewer{
     this.overviewQuery=request;
     this.showOverview(data,overviewLegend);editLegend();status.textContent=describeOverview();
    }catch(error){status.textContent=operation.signal.aborted?'Lectura cancelada. '+(this.overviewActive?describeOverview():describe()):String(error);}
-   finally{this.sectorOperation=undefined;controls.disabled=false;analysis.disabled=false;sectorButton.disabled=false;cancel.hidden=true;setMode();}
+   finally{this.sectorOperation=undefined;controls.disabled=false;analysis.disabled=false;sectorButton.disabled=false;cancel.hidden=true;attribute.value=this.overviewQuery.field??'';setMode();}
   };
   this.canvas.addEventListener('dblclick',event=>{
    if(!this.overviewActive||this.sectorOperation)return;
@@ -379,7 +406,8 @@ export class BlockViewer{
    }catch(error){status.textContent=operation.signal.aborted?'Lectura cancelada. '+(this.overviewActive?describeOverview():describe()):String(error);}
    finally{this.sectorOperation=undefined;controls.disabled=false;analysis.disabled=false;sectorButton.disabled=false;cancel.hidden=true;setMode();update();}
   };
-  status.textContent=describe();setMode();update();
+  if(initialOverview)this.showOverview(initialOverview,overviewLegend);
+  status.textContent=initialOverview?describeOverview():describe();setMode();update();
  }
 
  private draftBlock?:any;
